@@ -6,12 +6,15 @@ import json
 import os
 from collections import defaultdict
 import re
+import os
+
+# Limpar console
+os.system('cls' if os.name == 'nt' else 'clear')
 
 warnings.filterwarnings('ignore')
 
 # Data fixa para o nome do arquivo
 data_nome_arquivo = "050825"
-
 
 # Fechamento.csv - CORREÇÃO: especificar dtype para evitar problemas com decimais
 fechamento = pd.read_csv(r"C:\Users\win11\Downloads\fechamento.csv", sep=';', encoding='utf-8', decimal=',', thousands='.')
@@ -57,11 +60,6 @@ for coluna in colunas_numericas:
 # OFERTAS_VOG.xlsx
 ofertas_vog = pd.read_excel(r"C:\Users\win11\Downloads\OFERTAS_VOG.xlsx")
 
-# DEBUG: Verificar se há valores nulos nas colunas importantes dos custos
-for col in ['PRODUTO', 'PCS', 'KGS', 'CUSTO', 'TOTAL', 'FRETE', 'PRODUÇÃO']:
-    if col in custos_produtos.columns:
-        null_count = custos_produtos[col].isna().sum()
-
 # Renomear colunas de custos_produtos para facilitar o lookup
 custos_produtos.rename(columns={
     'PRODUTO': 'CODPRODUTO',
@@ -82,12 +80,18 @@ numeric_columns_fechamento = ['ROMANEIO', 'NF-E', 'CF_NF', 'CODPRODUTO', 'QTDE',
 
 for col in numeric_columns_fechamento:
     if col in fechamento.columns:
-        # Converter para numérico, tratando vírgulas como decimais
-        fechamento[col] = pd.to_numeric(fechamento[col], errors='coerce')
+        if col == 'DESCONTO':  # Tratamento especial para a coluna DESCONTO
+            # Converter usando a mesma lógica da função converter_valor_brasileiro
+            fechamento[col] = fechamento[col].apply(converter_valor_brasileiro)
+            
+            # Dividir por 100 para obter a porcentagem correta
+            fechamento[col] = fechamento[col] / 100
+        else:
+            # Para outras colunas, usar conversão padrão
+            fechamento[col] = pd.to_numeric(fechamento[col], errors='coerce')
 
 # 1. Notas canceladas
 notas_canceladas = cancelados['NUMERO'].tolist()
-print(f"Notas canceladas: {len(notas_canceladas)} registros")
 
 # 2. Devoluções (DESCRICAO = "DEV VENDA C/ FIN S/ EST" ou HISTORICO = "68")
 devolucoes_filtro = devolucoes[
@@ -95,7 +99,6 @@ devolucoes_filtro = devolucoes[
     (devolucoes['HISTORICO'] == "68")
 ]
 devolucoes_var = devolucoes_filtro[['ROMANEIO', 'NOTA FISCAL']].values.tolist()
-print(f"Devoluções: {len(devolucoes_var)} registros")
 
 # 3. Vendas (DESCRICAO = "VENDA" ou HISTORICO = "51")
 vendas_filtro = devolucoes[
@@ -103,11 +106,9 @@ vendas_filtro = devolucoes[
     (devolucoes['HISTORICO'] == "51")
 ]
 vendas_var = vendas_filtro[['ROMANEIO', 'NOTA FISCAL']].values.tolist()
-print(f"Vendas: {len(vendas_var)} registros")
 
 # Filtrar fechamento removendo notas canceladas
 fechamento_sem_cancelados = fechamento[~fechamento['NF-E'].isin(notas_canceladas)].copy()
-print(f"Fechamento sem cancelados: {len(fechamento_sem_cancelados)} linhas")
 
 # CORREÇÃO: Dicionário para custos_produtos (por CODPRODUTO e DATA)
 custos_dict = {}
@@ -141,7 +142,6 @@ for _, row in custos_produtos.iterrows():
             'PRODUÇÃO': producao_val
         }
     except Exception as e:
-        print(f"Erro ao processar linha de custos: {e}")
         continue
 
 # Dicionário para Quinzena - CORREÇÃO: usar PK completa (ROMANEIO_NF-E_CODPRODUTO)
@@ -213,13 +213,14 @@ base_df['IRPJ'] = fechamento_sem_cancelados['IRPJ'].fillna(0) if 'IRPJ' in fecha
 base_df['CSLL'] = fechamento_sem_cancelados['CSLL'].fillna(0) if 'CSLL' in fechamento_sem_cancelados.columns else 0
 base_df['VL ICMS'] = fechamento_sem_cancelados['VLR ICMS'] if 'VLR ICMS' in fechamento_sem_cancelados.columns else 0
 base_df['Aliq Icms'] = fechamento_sem_cancelados['ALIQ ICMS'] / 100 if 'ALIQ ICMS' in fechamento_sem_cancelados.columns else 0
-base_df['Desc Perc'] = fechamento_sem_cancelados['DESCONTO'].fillna(0) / 100 if 'DESCONTO' in fechamento_sem_cancelados.columns else 0
+base_df['Desc Perc'] = fechamento_sem_cancelados['DESCONTO'].fillna(0) if 'DESCONTO' in fechamento_sem_cancelados.columns else 0
 base_df['Preço Venda'] = fechamento_sem_cancelados['PRECO VENDA'] if 'PRECO VENDA' in fechamento_sem_cancelados.columns else 0
 
 # CORREÇÃO: Preencher Quinzena usando o dicionário criado
 base_df['PK'] = base_df['OS'].astype(str) + "_" + base_df['NF-E'].astype(str) + "_" + base_df['CODPRODUTO'].astype(str)
 base_df['Quinzena'] = base_df['PK'].map(lambda x: quinzena_dict.get(x, ""))
 
+base_df['GRUPO'] = base_df['GRUPO'].fillna('VAREJO')
 # 1. QTDE AJUSTADA - CORREÇÃO: implementar a lógica exata do Excel
 def calcular_qtde_ajustada(row):
     try:
@@ -283,7 +284,6 @@ def buscar_custo(row):
         else:
             return np.nan
     except Exception as e:
-        print(f"Erro ao buscar custo: {e}")
         return np.nan
 
 base_df['CUSTO'] = base_df.apply(buscar_custo, axis=1)
@@ -323,6 +323,7 @@ base_df['Frete'] = base_df.apply(buscar_frete, axis=1)
 
 # Verificar quantos valores de Frete foram encontrados
 fretes_encontrados = (base_df['Frete'] > 0).sum()
+
 # 6. Produção
 def buscar_producao(row):
     try:
@@ -589,15 +590,24 @@ for _, row in base_df.iterrows():
     except:
         linhas_sem_correspondencia.append((data, codproduto))
 
-# Remover duplicatas e exibir
-if linhas_sem_correspondencia:
-    linhas_unicas = list(set(linhas_sem_correspondencia))
-    print("\nDATA e CODPRODUTO sem correspondência no dicionário de custos:")
-    for data, codproduto in linhas_unicas:
-        print(f"DATA: {data}, CODPRODUTO: {codproduto}")
-else:
-    print("\nTodos os registros encontraram correspondência no dicionário de custos.")
+# Limpar console novamente para mostrar apenas os números importantes
+os.system('cls' if os.name == 'nt' else 'clear')
 
+# Exibir apenas as contagens importantes
+print("=== RESUMO DO PROCESSAMENTO ===")
+print(f"Total de registros no fechamento: {len(fechamento)}")
+print(f"Total de registros após remover cancelados: {len(fechamento_sem_cancelados)}")
+print(f"Notas canceladas identificadas: {len(notas_canceladas)}")
+print(f"Devoluções identificadas: {len(devolucoes_var)}")
+print(f"Vendas identificadas: {len(vendas_var)}")
+print(f"Custos de produtos carregados: {len(custos_produtos)}")
+print(f"Custos sem data: {custos_produtos_sem_data}")
+print(f"Custos sem código: {custos_produtos_sem_codigo}")
+print(f"Custos encontrados no dicionário: {custos_encontrados}")
+print(f"Custos não encontrados: {custos_faltantes}")
+print(f"Fretes encontrados: {fretes_encontrados}")
+print(f"Produções encontradas: {producao_encontrados}")
+print(f"Registros sem correspondência de custos: {len(set(linhas_sem_correspondencia))}")
 
 # Criar arquivo Excel
 output_path = f"C:\\Users\\win11\\Downloads\\margem_{data_nome_arquivo}.xlsx"
@@ -631,10 +641,8 @@ def default_serializer(obj):
         return None  # Tratar infinitos
     raise TypeError(f"Type {type(obj)} not serializable")
 
-
 with open(json_path, 'w', encoding='utf-8') as f:
     json.dump(base_df.to_dict(orient='records'), f, ensure_ascii=False, indent=4, default=default_serializer)
-
 
 print(f"\nArquivo Excel salvo em: {output_path}")
 print(f"Arquivo JSON salvo em: {json_path}")
