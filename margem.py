@@ -212,7 +212,6 @@ base_df['VLRCOFINS'] = fechamento_sem_cancelados['VLR COFINS'].fillna(0) if 'VLR
 base_df['IRPJ'] = fechamento_sem_cancelados['IRPJ'].fillna(0) if 'IRPJ' in fechamento_sem_cancelados.columns else 0
 base_df['CSLL'] = fechamento_sem_cancelados['CSLL'].fillna(0) if 'CSLL' in fechamento_sem_cancelados.columns else 0
 base_df['VL ICMS'] = fechamento_sem_cancelados['VLR ICMS'] if 'VLR ICMS' in fechamento_sem_cancelados.columns else 0
-base_df['Aliq Icms'] = fechamento_sem_cancelados['ALIQ ICMS'] / 100 if 'ALIQ ICMS' in fechamento_sem_cancelados.columns else 0
 base_df['Desc Perc'] = fechamento_sem_cancelados['DESCONTO'].fillna(0) if 'DESCONTO' in fechamento_sem_cancelados.columns else 0
 base_df['Preço Venda'] = fechamento_sem_cancelados['PRECO VENDA'] if 'PRECO VENDA' in fechamento_sem_cancelados.columns else 0
 
@@ -221,6 +220,7 @@ base_df['PK'] = base_df['OS'].astype(str) + "_" + base_df['NF-E'].astype(str) + 
 base_df['Quinzena'] = base_df['PK'].map(lambda x: quinzena_dict.get(x, ""))
 
 base_df['GRUPO'] = base_df['GRUPO'].fillna('VAREJO')
+
 # 1. QTDE AJUSTADA - CORREÇÃO: implementar a lógica exata do Excel
 def calcular_qtde_ajustada(row):
     try:
@@ -367,6 +367,11 @@ base_df['Desc. Valor'] = base_df.apply(
 base_df['Fat. Bruto'] = base_df.apply(
     lambda row: -row['QTDE AJUSTADA'] * row['Preço Venda'] if row['CF'] == "DEV"
     else row['QTDE AJUSTADA'] * row['Preço Venda'], axis=1
+)
+
+# Calcular Aliq Icms - NOVA IMPLEMENTAÇÃO
+base_df['Aliq Icms'] = base_df.apply(
+    lambda row: round(row['VL ICMS'] / row['Fat. Bruto'], 2) if row['Fat. Bruto'] != 0 else 0, axis=1
 )
 
 # 11. Fat Liquido
