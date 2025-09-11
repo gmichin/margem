@@ -202,7 +202,7 @@ for _, row in fechamento.iterrows():
 # Criar base_df
 base_df = pd.DataFrame()
 
-# Preencher colunas básicas
+# Preencher colunas básicas - CORREÇÃO: QTDE deve ser o valor original
 base_df['CF'] = fechamento_sem_cancelados.apply(
     lambda row: 'DEV' if any([str(row['ROMANEIO']) == str(dev[0]) and str(row['NF-E']) == str(dev[1]) for dev in devolucoes_var]) 
     else row['LOJA'], axis=1
@@ -218,8 +218,10 @@ base_df['VENDEDOR'] = fechamento_sem_cancelados['VENDEDOR']
 base_df['CODPRODUTO'] = fechamento_sem_cancelados['CODPRODUTO'].astype(str).str.strip()
 base_df['GRUPO PRODUTO'] = fechamento_sem_cancelados['GRUPO PRODUTO']
 base_df['DESCRICAO'] = fechamento_sem_cancelados['DESCRICAO']
-base_df['QTDE'] = fechamento_sem_cancelados['QTDE']
-base_df['QTDE REAL'] = fechamento_sem_cancelados['QTDE REAL']
+
+base_df['QTDE'] = fechamento_sem_cancelados['QTDE']  
+base_df['QTDE REAL'] = fechamento_sem_cancelados['QTDE REAL'] 
+
 base_df['CUSTO EM SISTEMA'] = fechamento_sem_cancelados['CUSTO']
 base_df['Val Pis'] = fechamento_sem_cancelados['VLR PIS'].fillna(0) if 'VLR PIS' in fechamento_sem_cancelados.columns else 0
 base_df['VLRCOFINS'] = fechamento_sem_cancelados['VLR COFINS'].fillna(0) if 'VLR COFINS' in fechamento_sem_cancelados.columns else 0
@@ -228,7 +230,6 @@ base_df['CSLL'] = fechamento_sem_cancelados['CSLL'].fillna(0) if 'CSLL' in fecha
 base_df['VL ICMS'] = fechamento_sem_cancelados['VLR ICMS'] if 'VLR ICMS' in fechamento_sem_cancelados.columns else 0
 base_df['Desc Perc'] = fechamento_sem_cancelados['DESCONTO'].fillna(0) if 'DESCONTO' in fechamento_sem_cancelados.columns else 0
 base_df['Preço Venda'] = fechamento_sem_cancelados['PRECO VENDA'] if 'PRECO VENDA' in fechamento_sem_cancelados.columns else 0
-
 # Preencher Quinzena
 base_df['PK'] = base_df['OS'].astype(str) + "_" + base_df['NF-E'].astype(str) + "_" + base_df['CODPRODUTO'].astype(str)
 base_df['Quinzena'] = base_df['PK'].map(lambda x: quinzena_dict.get(x, ""))
@@ -238,6 +239,7 @@ base_df['GRUPO'] = base_df['GRUPO'].fillna('VAREJO')
 # 1. QTDE AJUSTADA
 def calcular_qtde_ajustada(row):
     try:
+        
         if row['QTDE REAL'] <= 0:
             return row['QTDE REAL']
         
@@ -248,10 +250,11 @@ def calcular_qtde_ajustada(row):
             return row['QTDE REAL']
             
         custo_info = custos_dict.get((codproduto, data), {})
-        peso = custo_info.get('PESO', 1)
+        qtd = custo_info.get('QTD', 1)
         
-        if peso > 1:
-            return row['QTDE'] * peso
+        
+        if qtd > 1:
+            return row['QTDE'] * qtd
         else:
             return row['QTDE REAL']
     except:
@@ -343,12 +346,16 @@ if 'ESCRITORIO' in fechamento_sem_cancelados.columns:
 else:
     base_df['Escritório'] = 0
 
+# MODIFICAÇÃO SOLICITADA: Substituir 4% por 3.5% na coluna Escritório
+base_df['Escritório'] = base_df['Escritório'].apply(lambda x: 0.035 if abs(x - 0.04) < 0.001 else x)
+
 # 8. P. Com
 if 'P.COM' in fechamento_sem_cancelados.columns:
     base_df['P. Com'] = fechamento_sem_cancelados['P.COM'].fillna(0)
 else:
     base_df['P. Com'] = 0
 
+    
 # 9. Desc. Valor
 base_df['Desc. Valor'] = base_df.apply(
     lambda row: 0 if (row['CF'] == "DEV" or row['GRUPO'] == "TENDA") 
