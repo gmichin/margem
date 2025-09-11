@@ -560,19 +560,18 @@ base_df['INCL.'] = ""
 # 45. DESCRIÇÃO_2
 base_df['DESCRIÇÃO_2'] = ""
 
-# Reordenar colunas
+# Reordenar colunas na ordem solicitada
 colunas_ordenadas = [
-    'CF', 'RAZAO', 'FANTASIA', 'GRUPO', 'OS', 'NF-E', 'CF_NF', 'DATA', 'VENDEDOR', 
-    'CODPRODUTO', 'GRUPO PRODUTO', 'DESCRICAO', 'QTDE', 'QTDE REAL', 'CUSTO EM SISTEMA', 
-    'Val Pis', 'VLRCOFINS', 'IRPJ', 'CSLL', 'VL ICMS', 'Aliq Icms', 'Desc Perc', 
-    'Desc. Valor', 'Preço Venda', 'Fat Liquido', 'Fat. Bruto', 'Lucro / Prej.', 'Margem', 
-    'Quinzena', 'QTDE AJUSTADA', 'QTDE REAL2', 'CUSTO', 'Custo real', 'Frete', 'Produção', 
-    'Escritório', 'P. Com', 'Aniversário', 'Comissão Kg', 'Comissão Real', 'Coleta Esc', 
-    'Frete Real', 'comissão', 'Escr.', 'frete', 'TP', 'CANC', 'Armazenagem', 
-    'Comissão por Regra', 'PK', 'Coluna2', 'FRETE - LUC/PREJ', 'DESC FEC', 'ESC FEC', 
-    'ICMS FEC', 'PRC VEND FEV', 'DESC', 'ESC', 'ICMS', 'PRC VEND', 'DESCRIÇÃO_1', 
-    'MOV ENC', 'INCL.', 'Custo divergente', 'CUST + IMP', 'CUST PROD', 'COM BRUTA', 
-    'Coluna1', 'DESCRIÇÃO_2'
+    'CF', 'RAZAO', 'FANTASIA', 'GRUPO', 'OS', 'NF-E', 'CF_NF', 'DATA', 'VENDEDOR',
+    'CODPRODUTO', 'GRUPO PRODUTO', 'DESCRICAO', 'QTDE', 'QTDE REAL', 'CUSTO EM SISTEMA',
+    'QTDE AJUSTADA', 'QTDE REAL2', 'CUSTO', 'Custo real', 'Frete', 'Produção',
+    'Escritório', 'Comissão Kg', 'P. Com', 'Aniversário', 'Val Pis', 'VLRCOFINS',
+    'IRPJ', 'CSLL', 'VL ICMS', 'Aliq Icms', 'Desc Perc', 'Desc. Valor', 'Preço Venda',
+    'Fat Liquido', 'Fat. Bruto', 'Lucro / Prej.', 'Margem', 'Quinzena', 'Comissão Real',
+    'Coleta Esc', 'Frete Real', 'INCL.', 'comissão', 'Escr.', 'frete', 'Custo divergente',
+    'TP', 'CANC', 'Armazenagem', 'Comissão por Regra', 'PK', 'Coluna2', 'FRETE - LUC/PREJ',
+    'CUST + IMP', 'CUST PROD', 'COM BRUTA', 'DESC FEC', 'ESC FEC', 'ICMS FEC', 'PRC VEND FEV',
+    'DESC', 'ESC', 'ICMS', 'PRC VEND', 'Coluna1', 'DESCRIÇÃO_1', 'DESCRIÇÃO_2'
 ]
 
 # Manter apenas colunas que existem no DataFrame
