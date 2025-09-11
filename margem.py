@@ -30,35 +30,35 @@ custos_produtos = pd.read_excel(r"C:\Users\win11\Downloads\Custos de produtos - 
 rename_mapping = {
     'PRODUTO': 'CODPRODUTO',
     'DATA': 'DATA',
-    'PCS': 'QTD',
+    'PCS': 'QTDE',
     'KGS': 'PESO_KGS',
     'CUSTO': 'CUSTO',
     'FRETE': 'FRETE',
     'PRODUÇÃO': 'PRODUÇÃO',
-    'TOTAL': 'TOTAL'
+    'TOTAL': 'TOTAL',
+    'QTD': 'QTD',
+    'PESO': 'PESO'
 }
 
 custos_produtos = custos_produtos.rename(columns=rename_mapping)
 
 # CONVERTER COLUNAS NUMÉRICAS - MÉTODO MAIS ROBUSTO
-colunas_numericas = ['QTD', 'PESO_KGS', 'CUSTO', 'FRETE', 'PRODUÇÃO', 'TOTAL']
+colunas_numericas = ['PESO_KGS', 'CUSTO', 'FRETE', 'PRODUÇÃO', 'TOTAL', 'QTD', 'PESO']
 
 for coluna in colunas_numericas:
     if coluna in custos_produtos.columns:
         try:
-            # Converter para string primeiro
-            custos_produtos[coluna] = custos_produtos[coluna].astype(str)
+            # Converter para string primeiro se não for já
+            if custos_produtos[coluna].dtype != 'object':  # CORREÇÃO: Acessar a coluna específica
+                custos_produtos[coluna] = custos_produtos[coluna].astype(str)
             
             # Substituir vírgula por ponto e remover possíveis espaços
-            custos_produtos[coluna] = custos_produtos[coluna].str.replace(',', '.', regex=False)
-            custos_produtos[coluna] = custos_produtos[coluna].str.replace(' ', '', regex=False)
-            
-            # Remover caracteres não numéricos (exceto ponto e sinal negativo)
-            custos_produtos[coluna] = custos_produtos[coluna].str.replace(r'[^\d\.\-]', '', regex=True)
+            custos_produtos[coluna] = custos_produtos[coluna].apply(
+                lambda x: str(x).replace(',', '.').replace(' ', '') if pd.notna(x) else x
+            )
             
             # Converter para numérico
             custos_produtos[coluna] = pd.to_numeric(custos_produtos[coluna], errors='coerce')
-            
             
         except Exception as e:
             print(f"Erro ao converter coluna {coluna}: {e}")
@@ -71,18 +71,10 @@ custos_produtos['DATA'] = pd.to_datetime(custos_produtos['DATA'], errors='coerce
 # Converter CODPRODUTO para string
 custos_produtos['CODPRODUTO'] = custos_produtos['CODPRODUTO'].astype(str).str.strip()
 
-# Verificar estatísticas das colunas convertidas
-
 # OFERTAS_VOG.xlsx
 ofertas_vog = pd.read_excel(r"C:\Users\win11\Downloads\OFERTAS_VOG.xlsx")
 
-# Converter DATA para datetime
-custos_produtos['DATA'] = pd.to_datetime(custos_produtos['DATA'], errors='coerce', dayfirst=True)
-
-# Converter CODPRODUTO para string
-custos_produtos['CODPRODUTO'] = custos_produtos['CODPRODUTO'].astype(str).str.strip()
-
-
+# Converter colunas numéricas do fechamento
 numeric_columns_fechamento = ['ROMANEIO', 'NF-E', 'CF_NF', 'CODPRODUTO', 'QTDE', 'QTDE REAL', 'CUSTO', 
                              'FRETE', 'PRODUCAO', 'ESCRITORIO', 'P.COM', 'ANIVERSARIO', 'VLR PIS', 
                              'VLR COFINS', 'IRPJ', 'CSLL', 'VLR ICMS', 'ALIQ ICMS', 'DESCONTO', 
@@ -119,53 +111,69 @@ vendas_var = vendas_filtro[['ROMANEIO', 'NOTA FISCAL']].values.tolist()
 # Filtrar fechamento removendo notas canceladas
 fechamento_sem_cancelados = fechamento[~fechamento['NF-E'].isin(notas_canceladas)].copy()
 
-
+# Criar dicionário de custos - VERSÃO CORRIGIDA
 custos_dict = {}
 custos_produtos_sem_data = 0
 custos_produtos_sem_codigo = 0
 
-for _, row in custos_produtos.iterrows():
-    if pd.isna(row['DATA']):
-        custos_produtos_sem_data += 1
-        continue
-        
-    if pd.isna(row['CODPRODUTO']) or row['CODPRODUTO'] == '':
-        custos_produtos_sem_codigo += 1
-        continue
-        
+# Converter para lista de dicionários para evitar problemas com iterrows()
+custos_data = custos_produtos.to_dict('records')
+
+for i, row in enumerate(custos_data):
     try:
-        codproduto = str(row['CODPRODUTO']).strip()
-        data_key = row['DATA'].date()
+        # Verificar DATA - abordagem mais segura
+        data_value = row.get('DATA', None)
+        if data_value is None or pd.isna(data_value) or (isinstance(data_value, str) and data_value.strip() == ''):
+            custos_produtos_sem_data += 1
+            continue
+            
+        # Verificar CODPRODUTO - abordagem mais segura
+        codproduto_value = row.get('CODPRODUTO', None)
+        if codproduto_value is None or pd.isna(codproduto_value) or (isinstance(codproduto_value, str) and codproduto_value.strip() == ''):
+            custos_produtos_sem_codigo += 1
+            continue
         
-        custo_val = float(row['CUSTO']) if pd.notna(row['CUSTO']) else 0
-        peso_val = float(row['PESO_KGS']) if pd.notna(row['PESO_KGS']) else 1
-        producao_val = float(row['PRODUÇÃO']) if pd.notna(row['PRODUÇÃO']) else 0
-        frete_val = float(row['FRETE']) if pd.notna(row['FRETE']) else 0
-        
-        custos_dict[(codproduto, data_key)] = {
-            'QTD': float(row['QTD']) if pd.notna(row['QTD']) else 0,
-            'PESO': peso_val,
-            'CUSTO': custo_val,
-            'FRETE': frete_val,
-            'PRODUÇÃO': producao_val
-        }
-        
+        # Converter para os tipos corretos
+        try:
+            codproduto = str(codproduto_value).strip()
+            data_key = pd.to_datetime(data_value, errors='coerce', dayfirst=True)
+            if pd.isna(data_key):
+                continue
+            data_key = data_key.date()
+            
+            # Converter valores numéricos com tratamento de erro
+            custo_val = float(row.get('CUSTO', 0)) if pd.notna(row.get('CUSTO')) and str(row.get('CUSTO', '')).strip() != '' else 0
+            peso_val = float(row.get('PESO', 1)) if pd.notna(row.get('PESO')) and str(row.get('PESO', '')).strip() != '' else 1
+            producao_val = float(row.get('PRODUÇÃO', 0)) if pd.notna(row.get('PRODUÇÃO')) and str(row.get('PRODUÇÃO', '')).strip() != '' else 0
+            frete_val = float(row.get('FRETE', 0)) if pd.notna(row.get('FRETE')) and str(row.get('FRETE', '')).strip() != '' else 0
+            qtd_val = float(row.get('QTD', 0)) if pd.notna(row.get('QTD')) and str(row.get('QTD', '')).strip() != '' else 0
+            
+            custos_dict[(codproduto, data_key)] = {
+                'QTD': qtd_val,
+                'PESO': peso_val,
+                'CUSTO': custo_val,
+                'FRETE': frete_val,
+                'PRODUÇÃO': producao_val
+            }
+            
+        except Exception as conv_error:
+            print(f"Erro de conversão na linha {i}: {conv_error}")
+            continue
+            
     except Exception as e:
-        print(f"Erro ao processar linha: {e}")
+        print(f"Erro inesperado ao processar linha {i}: {e}")
         continue
-
-
-# Dicionário para Quinzena - CORREÇÃO: usar PK completa (ROMANEIO_NF-E_CODPRODUTO)
+# Dicionário para Quinzena
 quinzena_dict = {}
 fechamento['PK'] = fechamento['ROMANEIO'].astype(str) + "_" + fechamento['NF-E'].astype(str) + "_" + fechamento['CODPRODUTO'].astype(str)
 for _, row in fechamento.iterrows():
     try:
         if pd.notna(row['QUINZENA']):
-            quinzena_dict[row['PK']] = str(row['QUINZENA'])  # Garantir que seja string
+            quinzena_dict[row['PK']] = str(row['QUINZENA'])
     except:
         continue
 
-# Dicionário para lookup de comissão por regra (usando múltiplas condições)
+# Dicionário para lookup de comissão por regra
 comissao_regra_dict = {}
 for _, row in fechamento.iterrows():
     try:
@@ -176,8 +184,6 @@ for _, row in fechamento.iterrows():
 
 # Dicionário para lookup por PK
 fechamento_pk_dict = {}
-
-# Verificar se a coluna 'Desconto verificado' existe, caso contrário usar 'DESCONTO'
 coluna_desconto = 'Desconto verificado' if 'Desconto verificado' in fechamento.columns else 'DESCONTO'
 
 for _, row in fechamento.iterrows():
@@ -196,6 +202,7 @@ for _, row in fechamento.iterrows():
     if pd.notna(row['NF-E']):
         fechamento_nf_dict[int(row['NF-E'])] = row['DESCRICAO'] if 'DESCRICAO' in fechamento.columns else ""
 
+# Criar base_df
 base_df = pd.DataFrame()
 
 # Preencher colunas básicas
@@ -225,7 +232,7 @@ base_df['VL ICMS'] = fechamento_sem_cancelados['VLR ICMS'] if 'VLR ICMS' in fech
 base_df['Desc Perc'] = fechamento_sem_cancelados['DESCONTO'].fillna(0) if 'DESCONTO' in fechamento_sem_cancelados.columns else 0
 base_df['Preço Venda'] = fechamento_sem_cancelados['PRECO VENDA'] if 'PRECO VENDA' in fechamento_sem_cancelados.columns else 0
 
-# CORREÇÃO: Preencher Quinzena usando o dicionário criado
+# Preencher Quinzena
 base_df['PK'] = base_df['OS'].astype(str) + "_" + base_df['NF-E'].astype(str) + "_" + base_df['CODPRODUTO'].astype(str)
 base_df['Quinzena'] = base_df['PK'].map(lambda x: quinzena_dict.get(x, ""))
 
@@ -255,17 +262,17 @@ def calcular_qtde_ajustada(row):
 
 base_df['QTDE AJUSTADA'] = base_df.apply(calcular_qtde_ajustada, axis=1)
 
-# 2. QTDE REAL2 - CORREÇÃO: implementar a lógica exata do Excel
+# 2. QTDE REAL2
 def calcular_qtde_real2(row):
     try:
-        codproduto = int(row['CODPRODUTO']) if pd.notna(row['CODPRODUTO']) else None
+        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else None
         data = row['DATA']
         
         if codproduto is None or data is None:
             return np.nan
             
         custo_info = custos_dict.get((codproduto, data), {})
-        peso = custo_info.get('PESO', 1)  # Padrão 1 se não encontrar
+        peso = custo_info.get('PESO', 1)
         
         if row['QTDE REAL'] < 0:
             return -row['QTDE AJUSTADA'] * peso
@@ -276,6 +283,7 @@ def calcular_qtde_real2(row):
 
 base_df['QTDE REAL2'] = base_df.apply(calcular_qtde_real2, axis=1)
 
+# Funções para buscar custo, frete e produção
 def buscar_custo(row):
     try:
         codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else None
@@ -356,7 +364,7 @@ base_df['Fat. Bruto'] = base_df.apply(
     else row['QTDE AJUSTADA'] * row['Preço Venda'], axis=1
 )
 
-
+# 11. Aliq Icms
 base_df['Aliq Icms'] = base_df.apply(
     lambda row: round(row['VL ICMS'] / row['Fat. Bruto'], 2) if (row['Fat. Bruto'] != 0 and pd.notna(row['VL ICMS'])) 
     else 0, axis=1
@@ -372,64 +380,71 @@ base_df['Custo real'] = base_df.apply(
     else row['CUSTO'] - (row['CUSTO'] * row['Aliq Icms']), axis=1
 )
 
-# 11. Fat Liquido
+# 12. Fat Liquido
 base_df['Fat Liquido'] = base_df.apply(
     lambda row: row['QTDE AJUSTADA'] * (row['Preço Venda'] - row['Preço Venda'] * row['Desc Perc']) if row['CF'] != "DEV"
     else -row['QTDE AJUSTADA'] * (row['Preço Venda'] - row['Preço Venda'] * row['Desc Perc']), axis=1
 )
 
-# 12. Aniversário
+# 13. Aniversário
 base_df['Aniversário'] = base_df.apply(
     lambda row: 0 if row['CF'] == "DEV" else row['Fat. Bruto'] * 0.01, axis=1
 )
 
-# 13. Comissão Kg
+# 14. Comissão Kg
 base_df['Comissão Kg'] = base_df.apply(
     lambda row: -(row['Preço Venda'] * row['P. Com']) if row['CF'] == "DEV" 
     else (row['Preço Venda'] * row['P. Com']), axis=1
 )
 
-# 14. Comissão Real
+# 15. Comissão Real
 base_df['Comissão Real'] = base_df.apply(
     lambda row: row['Fat Liquido'] * row['P. Com'] if row['Preço Venda'] > 0 
     else -(row['Fat Liquido'] * row['P. Com']), axis=1
 )
 
-# 15. Coleta Esc
+# 16. Coleta Esc
 base_df['Coleta Esc'] = base_df['Fat. Bruto'] * base_df['Escritório']
 
-# 16. Frete Real
+# 17. Frete Real
 base_df['Frete Real'] = base_df['QTDE REAL2'] * base_df['Frete']
 
-# 17. comissão
-base_df['comissão'] = np.where(
-    base_df['Preço Venda'] > 0,
-    base_df['Comissão Kg'] / base_df['Preço Venda'],
-    -base_df['Comissão Kg'] / base_df['Preço Venda']
+# 18. comissão
+base_df['comissão'] = base_df.apply(
+    lambda row: row['Comissão Kg'] / row['Preço Venda'] if row['Preço Venda'] > 0
+    else -row['Comissão Kg'] / row['Preço Venda'] if row['Preço Venda'] < 0
+    else 0, axis=1
 )
 
-# 18. Escr.
-base_df['Escr.'] = base_df['Coleta Esc'] / base_df['Fat. Bruto']
+# 19. Escr.
+base_df['Escr.'] = base_df.apply(
+    lambda row: row['Coleta Esc'] / row['Fat. Bruto'] if row['Fat. Bruto'] != 0
+    else 0, axis=1
+)
 
-# 19. frete
-base_df['frete'] = base_df['Frete Real'] / base_df['Fat. Bruto']
-# Substituir infinitos por None
-base_df['frete'] = base_df['frete'].replace([np.inf, -np.inf], None)
+# 20. frete
+base_df['frete'] = base_df.apply(
+    lambda row: row['Frete Real'] / row['Fat. Bruto'] if row['Fat. Bruto'] != 0
+    else 0, axis=1
+)
 
-# 20. TP
+# 21. TP
 base_df['TP'] = base_df.apply(
-    lambda row: "BIG BACON" if row['CODPRODUTO'] == 700
+    lambda row: "BIG BACON" if str(row['CODPRODUTO']) == "700"
     else "REFFINATO" if row['GRUPO PRODUTO'] in ["SALGADOS SUINOS A GRANEL", "SALGADOS SUINOS EMBALADOS"]
     else "MIX", axis=1
 )
 
-# 21. CANC
+# 22. CANC
 base_df['CANC'] = base_df['NF-E'].apply(lambda x: "SIM" if x in notas_canceladas else "")
 
-# 22. Armazenagem
-base_df['Armazenagem'] = (base_df['Fat. Bruto'] * base_df['P. Com']) / base_df['QTDE AJUSTADA']
+# 23. Armazenagem
+base_df['Armazenagem'] = base_df.apply(
+    lambda row: (row['Fat. Bruto'] * row['P. Com']) / row['QTDE AJUSTADA'] if row['QTDE AJUSTADA'] != 0
+    else 0, axis=1
+)
 
-# CORREÇÃO: Comissão por Regra usando lookup por múltiplas condições
+# 24. Comissão por Regra
 def buscar_comissao_regra(row):
     try:
         if pd.notna(row['OS']) and pd.notna(row['NF-E']) and pd.notna(row['CODPRODUTO']):
@@ -442,15 +457,13 @@ def buscar_comissao_regra(row):
 
 base_df['Comissão por Regra'] = base_df.apply(buscar_comissao_regra, axis=1)
 
-# 24. PK (já criada anteriormente)
-
 # 25. Coluna2
 base_df['Coluna2'] = base_df['Comissão por Regra'] == base_df['Comissão Kg']
 
 # 26. FRETE - LUC/PREJ
 base_df['FRETE - LUC/PREJ'] = base_df['QTDE AJUSTADA'] * base_df['Frete']
 
-# CORREÇÃO: DESC FEC usando lookup por PK
+# 27. DESC FEC
 def buscar_desc_fec(row):
     try:
         pk = str(row['OS']) + "_" + str(row['NF-E']) + "_" + str(row['CODPRODUTO'])
@@ -511,7 +524,7 @@ base_df['PRC VEND'] = base_df.apply(
 )
 
 # 35. DESCRIÇÃO_1
-base_df['DESCRIÇÃO_1'] = base_df['NF-E'].apply(lambda x: fechamento_nf_dict.get(x, ''))
+base_df['DESCRIÇÃO_1'] = base_df['NF-E'].apply(lambda x: fechamento_nf_dict.get(int(x), '') if pd.notna(x) else '')
 
 # 36. MOV ENC
 base_df['MOV ENC'] = base_df.apply(
@@ -532,20 +545,16 @@ base_df['COM BRUTA'] = base_df['P. Com'] * base_df['Fat. Bruto']
 base_df['Coluna1'] = (round(base_df['COM BRUTA'], 2) == round(base_df['Comissão Real'], 2))
 
 # 41. Custo divergente
-base_df['Custo divergente'] = np.where(
-    base_df['QTDE'] > 0,
-    np.where(base_df['CUSTO EM SISTEMA'] == base_df['CUSTO'], "Só constando", ""),
-    ""
+base_df['Custo divergente'] = base_df.apply(
+    lambda row: "Só constando" if (row['QTDE'] > 0 and row['CUSTO EM SISTEMA'] == row['CUSTO']) else "", axis=1
 )
 
 # 42. Lucro / Prej.
 base_df['Lucro / Prej.'] = base_df['Fat Liquido'] - base_df['CUST + IMP']
 
 # 43. Margem
-base_df['Margem'] = np.where(
-    base_df['Fat Liquido'] != 0,
-    base_df['Lucro / Prej.'] / base_df['Fat Liquido'] * 100,
-    0
+base_df['Margem'] = base_df.apply(
+    lambda row: (row['Lucro / Prej.'] / row['Fat Liquido'] * 100) if row['Fat Liquido'] != 0 else 0, axis=1
 )
 
 # 44. INCL.
@@ -554,7 +563,7 @@ base_df['INCL.'] = ""
 # 45. DESCRIÇÃO_2
 base_df['DESCRIÇÃO_2'] = ""
 
-# Reordenar colunas para manter a ordem desejada
+# Reordenar colunas
 colunas_ordenadas = [
     'CF', 'RAZAO', 'FANTASIA', 'GRUPO', 'OS', 'NF-E', 'CF_NF', 'DATA', 'VENDEDOR', 
     'CODPRODUTO', 'GRUPO PRODUTO', 'DESCRICAO', 'QTDE', 'QTDE REAL', 'CUSTO EM SISTEMA', 
@@ -569,30 +578,12 @@ colunas_ordenadas = [
     'Coluna1', 'DESCRIÇÃO_2'
 ]
 
-base_df = base_df[colunas_ordenadas]
+# Manter apenas colunas que existem no DataFrame
+colunas_existentes = [col for col in colunas_ordenadas if col in base_df.columns]
+base_df = base_df[colunas_existentes]
 
 # Substituir NaN por string vazia para melhor visualização
 base_df = base_df.fillna("")
-
-# Verificar e exibir apenas linhas sem correspondência no dicionário de custos
-linhas_sem_correspondencia = []
-
-for _, row in base_df.iterrows():
-    try:
-        codproduto = int(row['CODPRODUTO']) if pd.notna(row['CODPRODUTO']) else None
-        data = row['DATA']
-        
-        if codproduto is None or data is None:
-            linhas_sem_correspondencia.append((data, codproduto))
-            continue
-            
-        # Verificar se a chave existe no dicionário
-        key = (codproduto, data)
-        if key not in custos_dict:
-            linhas_sem_correspondencia.append((data, codproduto))
-    except:
-        linhas_sem_correspondencia.append((data, codproduto))
-
 
 # Criar arquivo Excel
 output_path = f"C:\\Users\\win11\\Downloads\\Margem_{data_nome_arquivo}.xlsx"
@@ -608,7 +599,6 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
 # Salvar também como JSON
 json_path = f"C:\\Users\\win11\\Downloads\\Margem_{data_nome_arquivo}.json"
 
-# Função serializadora atualizada para lidar com infinitos
 def default_serializer(obj):
     if isinstance(obj, (np.integer, int)):
         return int(obj)
@@ -623,7 +613,7 @@ def default_serializer(obj):
     elif pd.isna(obj):
         return None
     elif obj in [np.inf, -np.inf]:
-        return None  # Tratar infinitos
+        return None
     raise TypeError(f"Type {type(obj)} not serializable")
 
 with open(json_path, 'w', encoding='utf-8') as f:
