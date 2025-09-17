@@ -78,16 +78,6 @@ numeric_columns_fechamento = ['ROMANEIO', 'NF-E', 'CF_NF', 'CODPRODUTO', 'QTDE',
                              'VLR DESCONTO', 'PRECO VENDA', 'FAT LIQUIDO', 'FAT BRUTO', 'LUCRO', 'MARGEM', 
                              'QTD POR EMB', 'FATOR DE CONVERSAO']
 
-for col in numeric_columns_fechamento:
-    if col in fechamento.columns:
-        if col == 'DESCONTO':  # Tratamento especial para DESCONTO
-            # Converter para numérico primeiro
-            fechamento[col] = pd.to_numeric(fechamento[col], errors='coerce')
-            # Depois dividir por 100
-            fechamento[col] = fechamento[col] / 100
-        else:
-            fechamento[col] = pd.to_numeric(fechamento[col], errors='coerce')
-
 # 1. Notas canceladas
 notas_canceladas = cancelados['NUMERO'].tolist()
 
@@ -186,7 +176,6 @@ coluna_desconto = 'Desconto verificado' if 'Desconto verificado' in fechamento.c
 for _, row in fechamento.iterrows():
     pk = str(row['ROMANEIO']) + "_" + str(row['NF-E']) + "_" + str(row['CODPRODUTO'])
     fechamento_pk_dict[pk] = {
-        'DESCONTO': row[coluna_desconto] if pd.notna(row[coluna_desconto]) else np.nan,
         'ESCRITORIO': row['ESCRITORIO'] if 'ESCRITORIO' in fechamento.columns and pd.notna(row['ESCRITORIO']) else np.nan,
         'VLR ICMS': row['VLR ICMS'] if 'VLR ICMS' in fechamento.columns and pd.notna(row['VLR ICMS']) else np.nan,
         'PRECO VENDA': row['PRECO VENDA'] if 'PRECO VENDA' in fechamento.columns and pd.notna(row['PRECO VENDA']) else np.nan,
@@ -228,13 +217,13 @@ base_df['VLRCOFINS'] = fechamento_sem_cancelados['VLR COFINS'].fillna(0) if 'VLR
 base_df['IRPJ'] = fechamento_sem_cancelados['IRPJ'].fillna(0) if 'IRPJ' in fechamento_sem_cancelados.columns else 0
 base_df['CSLL'] = fechamento_sem_cancelados['CSLL'].fillna(0) if 'CSLL' in fechamento_sem_cancelados.columns else 0
 base_df['VL ICMS'] = fechamento_sem_cancelados['VLR ICMS'] if 'VLR ICMS' in fechamento_sem_cancelados.columns else 0
-base_df['Desc Perc'] = fechamento_sem_cancelados['DESCONTO'].fillna(0) if 'DESCONTO' in fechamento_sem_cancelados.columns else 0
 base_df['Preço Venda'] = fechamento_sem_cancelados['PRECO VENDA'] if 'PRECO VENDA' in fechamento_sem_cancelados.columns else 0
 # Preencher Quinzena
 base_df['PK'] = base_df['OS'].astype(str) + "_" + base_df['NF-E'].astype(str) + "_" + base_df['CODPRODUTO'].astype(str)
 base_df['Quinzena'] = base_df['PK'].map(lambda x: quinzena_dict.get(x, ""))
-
 base_df['GRUPO'] = base_df['GRUPO'].fillna('VAREJO')
+
+
 
 # 1. QTDE AJUSTADA
 def calcular_qtde_ajustada(row):
@@ -356,7 +345,23 @@ else:
     base_df['P. Com'] = 0
 
     
-# 9. Desc. Valor
+# 9. Desc. Valor - SOLUÇÃO ALTERNATIVA
+# Mapear diretamente pelo índice para garantir correspondência
+base_df['Desc Perc'] = 0  # Inicializar com zero
+
+if 'DESCONTO' in fechamento_sem_cancelados.columns:
+    for i, row in fechamento_sem_cancelados.iterrows():
+        if i < len(base_df):  # Garantir que não ultrapasse o tamanho do base_df
+            desconto_val = row['DESCONTO']
+            if pd.notna(desconto_val) and str(desconto_val).strip() != '':
+                try:
+                    base_df.at[i, 'Desc Perc'] = float(str(desconto_val).replace(',', '.').strip()) / 100
+                except:
+                    base_df.at[i, 'Desc Perc'] = 0
+            else:
+                base_df.at[i, 'Desc Perc'] = 0
+
+# Agora calcular o Desc. Valor
 base_df['Desc. Valor'] = base_df.apply(
     lambda row: 0 if (row['CF'] == "DEV" or row['GRUPO'] == "TENDA") 
     else row['QTDE AJUSTADA'] * row['Preço Venda'] * row['Desc Perc'], axis=1
