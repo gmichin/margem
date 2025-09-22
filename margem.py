@@ -571,7 +571,7 @@ base_df['Coluna1'] = (round(base_df['COM BRUTA'], 2) == round(base_df['Comissão
 
 # 41. Custo divergente
 base_df['Custo divergente'] = base_df.apply(
-    lambda row: " " if (row['QTDE'] > 0 and row['CUSTO EM SISTEMA'] == row['CUSTO']) else "", axis=1
+    lambda row: "CORRETO" if (row['QTDE'] > 0 and row['CUSTO EM SISTEMA'] == row['CUSTO']) else "DIVERGENTE", axis=1
 )
 
 # 42. Lucro / Prej.
