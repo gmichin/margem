@@ -482,11 +482,27 @@ def buscar_desc_fec(row):
 
 base_df['DESC FEC'] = base_df.apply(buscar_desc_fec, axis=1)
 
-# 28. ESC FEC
+# 28. ESC FEC - COM CORREÇÃO SOLICITADA
 def buscar_esc_fec(row):
     try:
         pk = str(row['OS']) + "_" + str(row['NF-E']) + "_" + str(row['CODPRODUTO'])
-        return fechamento_pk_dict.get(pk, {}).get('ESCRITORIO', np.nan)
+        esc_fec_value = fechamento_pk_dict.get(pk, {}).get('ESCRITORIO', np.nan)
+        
+        # Se for NaN, retorna NaN
+        if pd.isna(esc_fec_value):
+            return np.nan
+            
+        # Converter para float para garantir
+        esc_fec_value = float(esc_fec_value)
+        
+        # MODIFICAÇÃO SOLICITADA: Substituir 4% por 3.5% (igual na coluna Escritório)
+        if abs(esc_fec_value - 4.0) < 0.001:  # Comparação com tolerância para floats
+            esc_fec_value = 3.5
+        
+        # Dividir por 100 (converter percentual para decimal)
+        esc_fec_value = esc_fec_value / 100
+        
+        return esc_fec_value
     except:
         return np.nan
 
@@ -555,7 +571,7 @@ base_df['Coluna1'] = (round(base_df['COM BRUTA'], 2) == round(base_df['Comissão
 
 # 41. Custo divergente
 base_df['Custo divergente'] = base_df.apply(
-    lambda row: "Só constando" if (row['QTDE'] > 0 and row['CUSTO EM SISTEMA'] == row['CUSTO']) else "", axis=1
+    lambda row: " " if (row['QTDE'] > 0 and row['CUSTO EM SISTEMA'] == row['CUSTO']) else "", axis=1
 )
 
 # 42. Lucro / Prej.
