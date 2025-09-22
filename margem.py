@@ -561,10 +561,10 @@ base_df['MOV ENC'] = base_df.apply(
 base_df['CUST + IMP'] = base_df['Custo real'] * base_df['QTDE AJUSTADA']
 
 # 38. CUST PROD
-base_df['CUST PROD'] = base_df['Custo real'] * base_df['QTDE AJUSTADA']
+base_df['CUST PROD'] = base_df['QTDE AJUSTADA'] * base_df['Produção']
 
 # 39. COM BRUTA
-base_df['COM BRUTA'] = base_df['P. Com'] * base_df['Fat. Bruto']
+base_df['COM BRUTA'] = base_df['QTDE AJUSTADA'] * base_df['P. Com'] * base_df['Preço Venda']
 
 # 40. Coluna1
 base_df['Coluna1'] = (round(base_df['COM BRUTA'], 2) == round(base_df['Comissão Real'], 2))
