@@ -150,6 +150,7 @@ for i, row in enumerate(custos_data):
     except Exception as e:
         print(f"Erro inesperado ao processar linha {i}: {e}")
         continue
+
 # Dicionário para Quinzena
 quinzena_dict = {}
 fechamento['PK'] = fechamento['ROMANEIO'].astype(str) + "_" + fechamento['NF-E'].astype(str) + "_" + fechamento['CODPRODUTO'].astype(str)
@@ -169,24 +170,29 @@ for _, row in fechamento.iterrows():
     except:
         continue
 
-# Dicionário para lookup por PK
+# Dicionário para lookup por PK do fechamento.csv - CORREÇÃO SOLICITADA
 fechamento_pk_dict = {}
-coluna_desconto = 'Desconto verificado' if 'Desconto verificado' in fechamento.columns else 'DESCONTO'
-
 for _, row in fechamento.iterrows():
     pk = str(row['ROMANEIO']) + "_" + str(row['NF-E']) + "_" + str(row['CODPRODUTO'])
+    
+    # Verificar se a coluna 'Desconto verificado' existe
+    desconto_verificado = row['Desconto verificado'] if 'Desconto verificado' in fechamento.columns and pd.notna(row['Desconto verificado']) else np.nan
+    
     fechamento_pk_dict[pk] = {
         'ESCRITORIO': row['ESCRITORIO'] if 'ESCRITORIO' in fechamento.columns and pd.notna(row['ESCRITORIO']) else np.nan,
         'VLR ICMS': row['VLR ICMS'] if 'VLR ICMS' in fechamento.columns and pd.notna(row['VLR ICMS']) else np.nan,
         'PRECO VENDA': row['PRECO VENDA'] if 'PRECO VENDA' in fechamento.columns and pd.notna(row['PRECO VENDA']) else np.nan,
-        'QUINZENA': row['QUINZENA'] if 'QUINZENA' in fechamento.columns and pd.notna(row['QUINZENA']) else ""
+        'QUINZENA': row['QUINZENA'] if 'QUINZENA' in fechamento.columns and pd.notna(row['QUINZENA']) else "",
+        'DESCONTO_VERIFICADO': desconto_verificado,  # Adicionado conforme solicitação
+        'MOV': row['Mov'] if 'Mov' in fechamento.columns and pd.notna(row['Mov']) else "",  # Adicionado para DESCRIÇÃO_1
+        'MOV_V2': row['Mov V2'] if 'Mov V2' in fechamento.columns and pd.notna(row['Mov V2']) else ""  # Adicionado para DESCRIÇÃO_2
     }
 
 # Dicionário para lookup por NF-E
 fechamento_nf_dict = {}
 for _, row in fechamento.iterrows():
     if pd.notna(row['NF-E']):
-        fechamento_nf_dict[int(row['NF-E'])] = row['DESCRICAO'] if 'DESCRICAO' in fechamento.columns else ""
+        fechamento_nf_dict[int(row['NF-E'])] = row['Mov'] if 'Mov' in fechamento.columns and pd.notna(row['Mov']) else ""
 
 # Criar base_df
 base_df = pd.DataFrame()
@@ -218,12 +224,11 @@ base_df['IRPJ'] = fechamento_sem_cancelados['IRPJ'].fillna(0) if 'IRPJ' in fecha
 base_df['CSLL'] = fechamento_sem_cancelados['CSLL'].fillna(0) if 'CSLL' in fechamento_sem_cancelados.columns else 0
 base_df['VL ICMS'] = fechamento_sem_cancelados['VLR ICMS'] if 'VLR ICMS' in fechamento_sem_cancelados.columns else 0
 base_df['Preço Venda'] = fechamento_sem_cancelados['PRECO VENDA'] if 'PRECO VENDA' in fechamento_sem_cancelados.columns else 0
+
 # Preencher Quinzena
 base_df['PK'] = base_df['OS'].astype(str) + "_" + base_df['NF-E'].astype(str) + "_" + base_df['CODPRODUTO'].astype(str)
 base_df['Quinzena'] = base_df['PK'].map(lambda x: quinzena_dict.get(x, ""))
 base_df['GRUPO'] = base_df['GRUPO'].fillna('VAREJO')
-
-
 
 # 1. QTDE AJUSTADA
 def calcular_qtde_ajustada(row):
@@ -472,11 +477,11 @@ base_df['Coluna2'] = base_df['Comissão por Regra'] == base_df['Comissão Kg']
 # 26. FRETE - LUC/PREJ
 base_df['FRETE - LUC/PREJ'] = base_df['QTDE AJUSTADA'] * base_df['Frete']
 
-# 27. DESC FEC
+# 27. DESC FEC - CORREÇÃO SOLICITADA: Buscar 'Desconto verificado' do fechamento.csv
 def buscar_desc_fec(row):
     try:
         pk = str(row['OS']) + "_" + str(row['NF-E']) + "_" + str(row['CODPRODUTO'])
-        return fechamento_pk_dict.get(pk, {}).get('DESCONTO', np.nan)
+        return fechamento_pk_dict.get(pk, {}).get('DESCONTO_VERIFICADO', np.nan)
     except:
         return np.nan
 
@@ -548,8 +553,18 @@ base_df['PRC VEND'] = base_df.apply(
     lambda row: row['PRC VEND FEV'] == row['Preço Venda'] if pd.notna(row['PRC VEND FEV']) else False, axis=1
 )
 
-# 35. DESCRIÇÃO_1
-base_df['DESCRIÇÃO_1'] = base_df['NF-E'].apply(lambda x: fechamento_nf_dict.get(int(x), '') if pd.notna(x) else '')
+# 35. DESCRIÇÃO_1 - CORREÇÃO SOLICITADA: Comparar NF-E e preencher com 'Mov' do fechamento.csv
+def buscar_descricao_1(row):
+    try:
+        nf_e = int(row['NF-E']) if pd.notna(row['NF-E']) else None
+        if nf_e is not None and nf_e in fechamento_nf_dict:
+            return fechamento_nf_dict[nf_e]
+        else:
+            return ""
+    except:
+        return ""
+
+base_df['DESCRIÇÃO_1'] = base_df.apply(buscar_descricao_1, axis=1)
 
 # 36. MOV ENC
 base_df['MOV ENC'] = base_df.apply(
@@ -585,8 +600,15 @@ base_df['Margem'] = base_df.apply(
 # 44. INCL.
 base_df['INCL.'] = ""
 
-# 45. DESCRIÇÃO_2
-base_df['DESCRIÇÃO_2'] = ""
+# 45. DESCRIÇÃO_2 - CORREÇÃO SOLICITADA: Comparar PK e preencher com 'Mov V2' do fechamento.csv
+def buscar_descricao_2(row):
+    try:
+        pk = str(row['OS']) + "_" + str(row['NF-E']) + "_" + str(row['CODPRODUTO'])
+        return fechamento_pk_dict.get(pk, {}).get('MOV_V2', "")
+    except:
+        return ""
+
+base_df['DESCRIÇÃO_2'] = base_df.apply(buscar_descricao_2, axis=1)
 
 # Reordenar colunas na ordem solicitada
 colunas_ordenadas = [
