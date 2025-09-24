@@ -21,7 +21,57 @@ devolucoes = pd.read_csv(r"C:\Users\win11\Downloads\movimentação.csv", sep=';'
 # Custos de produtos - Julho.xlsx
 custos_produtos = pd.read_excel(r"C:\Users\win11\Downloads\Custos de produtos - Julho.xlsx", 
                                sheet_name='Base',
-                               dtype=str)  # Ler tudo como string primeiro
+                               dtype=str)
+
+# LOURENCINI.xlsx - CORREÇÃO PARA COMPARAR VALORES DAS CÉLULAS
+try:
+    lourencini = pd.read_excel(r"C:\Users\win11\Downloads\LOURENCINI.xlsx")
+    print("Colunas disponíveis no arquivo LOURENCINI:", lourencini.columns.tolist())
+    
+    # Verificar se as colunas necessárias existem
+    required_cols = ['COD', '0,2', '0,3', '0,5', '0,7', '1', 'Data']
+    if all(col in lourencini.columns for col in required_cols):
+        print("Arquivo LOURENCINI carregado com sucesso!")
+        
+        # CORREÇÃO: Melhor tratamento dos CODs
+        lourencini['COD'] = lourencini['COD'].astype(str).str.strip()
+        
+        # Remover .0 do final e zeros à esquerda
+        lourencini['COD'] = lourencini['COD'].str.replace(r'\.0$', '', regex=True)
+        lourencini['COD'] = lourencini['COD'].str.replace(r'^0+', '', regex=True)
+        lourencini['COD'] = lourencini['COD'].str.strip()
+        
+        # Remover linhas com COD vazio ou NaN
+        lourencini = lourencini[lourencini['COD'] != '']
+        lourencini = lourencini[lourencini['COD'] != 'nan']
+        lourencini = lourencini.dropna(subset=['COD'])
+        
+        # CORREÇÃO: Converter as colunas de preço para numérico (para comparar com PRECO VENDA)
+        colunas_preco = ['0,2', '0,3', '0,5', '0,7', '1']
+        for col in colunas_preco:
+            lourencini[col] = pd.to_numeric(lourencini[col], errors='coerce')
+        
+        print("Primeiros 10 CODs no arquivo LOURENCINI (após limpeza):")
+        print(lourencini['COD'].head(10).tolist())
+        print(f"Total de CODs únicos: {lourencini['COD'].nunique()}")
+        
+        # Converter datas
+        lourencini['Data'] = pd.to_datetime(lourencini['Data'], errors='coerce', dayfirst=True)
+        
+        # Se tiver Data_fim, converter também
+        if 'Data_fim' in lourencini.columns:
+            lourencini['Data_fim'] = pd.to_datetime(lourencini['Data_fim'], errors='coerce', dayfirst=True)
+        
+        # Ordenar por Data para facilitar busca
+        lourencini = lourencini.sort_values('Data')
+        print(f"LOURENCINI carregado com {len(lourencini)} linhas após limpeza")
+        
+    else:
+        print("Colunas necessárias não encontradas no arquivo LOURENCINI")
+        lourencini = pd.DataFrame()
+except Exception as e:
+    print(f"Erro ao carregar arquivo LOURENCINI: {e}")
+    lourencini = pd.DataFrame()
 
 # RENOMEAR COLUNAS CORRETAMENTE
 rename_mapping = {
@@ -45,16 +95,13 @@ colunas_numericas = ['PESO_KGS', 'CUSTO', 'FRETE', 'PRODUÇÃO', 'TOTAL', 'QTD',
 for coluna in colunas_numericas:
     if coluna in custos_produtos.columns:
         try:
-            # Converter para string primeiro se não for já
-            if custos_produtos[coluna].dtype != 'object':  # CORREÇÃO: Acessar a coluna específica
+            if custos_produtos[coluna].dtype != 'object':
                 custos_produtos[coluna] = custos_produtos[coluna].astype(str)
             
-            # Substituir vírgula por ponto e remover possíveis espaços
             custos_produtos[coluna] = custos_produtos[coluna].apply(
                 lambda x: str(x).replace(',', '.').replace(' ', '') if pd.notna(x) else x
             )
             
-            # Converter para numérico
             custos_produtos[coluna] = pd.to_numeric(custos_produtos[coluna], errors='coerce')
             
         except Exception as e:
@@ -70,6 +117,7 @@ custos_produtos['CODPRODUTO'] = custos_produtos['CODPRODUTO'].astype(str).str.st
 
 # OFERTAS_VOG.xlsx
 ofertas_vog = pd.read_excel(r"C:\Users\win11\Downloads\OFERTAS_VOG.xlsx")
+
 
 # Converter colunas numéricas do fechamento
 numeric_columns_fechamento = ['ROMANEIO', 'NF-E', 'CF_NF', 'CODPRODUTO', 'QTDE', 'QTDE REAL', 'CUSTO', 
@@ -194,10 +242,10 @@ for _, row in fechamento.iterrows():
     if pd.notna(row['NF-E']):
         fechamento_nf_dict[int(row['NF-E'])] = row['Mov'] if 'Mov' in fechamento.columns and pd.notna(row['Mov']) else ""
 
-# Criar base_df
+# Criar base_df (código existente)
 base_df = pd.DataFrame()
 
-# Preencher colunas básicas - CORREÇÃO: QTDE deve ser o valor original
+# Preencher colunas básicas
 base_df['CF'] = fechamento_sem_cancelados.apply(
     lambda row: 'DEV' if any([str(row['ROMANEIO']) == str(dev[0]) and str(row['NF-E']) == str(dev[1]) for dev in devolucoes_var]) 
     else row['LOJA'], axis=1
@@ -210,7 +258,16 @@ base_df['NF-E'] = fechamento_sem_cancelados['NF-E']
 base_df['CF_NF'] = fechamento_sem_cancelados['CF_NF'].fillna("")
 base_df['DATA'] = pd.to_datetime(fechamento_sem_cancelados['DATA'], dayfirst=True, errors='coerce').dt.date
 base_df['VENDEDOR'] = fechamento_sem_cancelados['VENDEDOR']
-base_df['CODPRODUTO'] = fechamento_sem_cancelados['CODPRODUTO'].astype(str).str.strip()
+
+# CORREÇÃO: Limpar CODPRODUTO CORRETAMENTE - APLICAR AS OPERAÇÕES DIRETAMENTE
+base_df['CODPRODUTO'] = fechamento_sem_cancelados['CODPRODUTO'].astype(str)
+
+# APLICAR AS OPERAÇÕES DE LIMPEZA DIRETAMENTE, NÃO COMO MÉTODOS
+base_df['CODPRODUTO'] = base_df['CODPRODUTO'].str.strip()
+base_df['CODPRODUTO'] = base_df['CODPRODUTO'].str.replace(r'\.0$', '', regex=True)
+base_df['CODPRODUTO'] = base_df['CODPRODUTO'].str.replace(r'^0+', '', regex=True)
+base_df['CODPRODUTO'] = base_df['CODPRODUTO'].str.strip()
+
 base_df['GRUPO PRODUTO'] = fechamento_sem_cancelados['GRUPO PRODUTO']
 base_df['DESCRICAO'] = fechamento_sem_cancelados['DESCRICAO']
 
@@ -391,7 +448,7 @@ base_df['Aliq Icms'] = base_df['Aliq Icms'].replace([np.inf, -np.inf], 0)
 base_df['Custo real'] = base_df.apply(
     lambda row: 0 if (pd.isna(row['QTDE AJUSTADA']) or row['QTDE AJUSTADA'] <= 0 or 
                      pd.isna(row['CUSTO']) or pd.isna(row['Aliq Icms']))
-    else row['CUSTO'] - (row['CUSTO'] * row['Aliq Icms']), axis=1
+    else round(row['CUSTO'] - (row['CUSTO'] * row['Aliq Icms']), 2), axis=1
 )
 
 # 12. Fat Liquido
@@ -405,16 +462,124 @@ base_df['Aniversário'] = base_df.apply(
     lambda row: 0 if row['CF'] == "DEV" else row['Fat. Bruto'] * 0.01, axis=1
 )
 
-# 14. Comissão Kg
-base_df['Comissão Kg'] = base_df.apply(
-    lambda row: -(row['Preço Venda'] * row['P. Com']) if row['CF'] == "DEV" 
-    else (row['Preço Venda'] * row['P. Com']), axis=1
-)
+# 14. Comissão Kg - FUNÇÃO CORRIGIDA
+def calcular_comissao_kg(row):
+    """
+    Calcula a comissão kg com regra especial para o grupo LOURENCINI
+    Compara PRECO VENDA com os valores dentro das células da tabela LOURENCINI
+    """
+    try:
+        # Se for devolução
+        if row['CF'] == "DEV":
+            comissao = -(row['Preço Venda'] * row['P. Com'])
+            return comissao
+        
+        # Se não for grupo LOURENCINI ou arquivo não carregado, aplicar regra normal
+        if row['GRUPO'] != "LOURENCINI" or lourencini.empty:
+            comissao = (row['Preço Venda'] * row['P. Com'])
+            return comissao
+        
+        # REGRA ESPECIAL PARA LOURENCINI
+        # CORREÇÃO: Garantir que estamos pegando o valor, não o método
+        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ''
+        data_venda = row['DATA']
+        preco_venda = row['Preço Venda']
+        
+        print(f"\n=== Processando LOURENCINI ===")
+        print(f"COD: '{codproduto}', Data: {data_venda}, Preço: {preco_venda}")
+        
+        if not codproduto or codproduto == 'nan' or pd.isna(data_venda) or pd.isna(preco_venda) or preco_venda == 0:
+            print("Dados inválidos, usando regra normal")
+            return (row['Preço Venda'] * row['P. Com'])
+        
+        # Buscar matching exato após limpeza
+        lourencini_filtrado = lourencini[lourencini['COD'] == codproduto]
+        
+        if lourencini_filtrado.empty:
+            print(f"COD '{codproduto}' não encontrado no arquivo LOURENCINI")
+            print(f"CODs disponíveis: {sorted(lourencini['COD'].unique().tolist())}")
+            return (row['Preço Venda'] * row['P. Com'])
+        
+        print(f"Encontrado {len(lourencini_filtrado)} registros para COD '{codproduto}'")
+        
+        # Converter data_venda para datetime para comparação
+        data_venda_dt = pd.Timestamp(data_venda)
+        
+        # Buscar a linha correta baseada na data
+        lourencini_row = None
+        
+        # Primeiro tentar encontrar por período (Data <= data_venda <= Data_fim)
+        if 'Data_fim' in lourencini_filtrado.columns:
+            lourencini_periodo = lourencini_filtrado[
+                (lourencini_filtrado['Data'] <= data_venda_dt) & 
+                (lourencini_filtrado['Data_fim'] >= data_venda_dt)
+            ]
+            if not lourencini_periodo.empty:
+                lourencini_row = lourencini_periodo.iloc[0]
+                print(f"Encontrado por período: {lourencini_row['Data'].date()} a {lourencini_row['Data_fim'].date()}")
+        
+        # Se não encontrou por período, buscar a última data anterior mais próxima
+        if lourencini_row is None:
+            lourencini_anteriores = lourencini_filtrado[lourencini_filtrado['Data'] <= data_venda_dt]
+            if not lourencini_anteriores.empty:
+                # Ordenar por data descendente e pegar a mais recente
+                lourencini_anteriores = lourencini_anteriores.sort_values('Data', ascending=False)
+                lourencini_row = lourencini_anteriores.iloc[0]
+                print(f"Encontrado por data anterior mais próxima: {lourencini_row['Data'].date()}")
+            else:
+                # Se não há datas anteriores, usar a primeira data disponível (mais antiga)
+                lourencini_filtrado = lourencini_filtrado.sort_values('Data', ascending=True)
+                lourencini_row = lourencini_filtrado.iloc[0]
+                print(f"Usando primeira data disponível: {lourencini_row['Data'].date()}")
+        
+        # CORREÇÃO: Agora comparar o PRECO VENDA com os VALORES dentro das células
+        # e usar o NOME DO CABEÇALHO da coluna correspondente como comissão
+        colunas_comissao = ['0,2', '0,3', '0,5', '0,7', '1']
+        comissao_encontrada = None
+        
+        print(f"Preço Venda: {preco_venda}")
+        print("Valores nas colunas da linha encontrada:")
+        
+        for coluna in colunas_comissao:
+            valor_na_tabela = lourencini_row[coluna]
+            print(f"  {coluna}: {valor_na_tabela}")
+            
+            # Comparar o PRECO VENDA com o valor dentro da célula
+            if pd.notna(valor_na_tabela) and abs(preco_venda - valor_na_tabela) < 0.01:  # Tolerância de 0.01 para floats
+                comissao_encontrada = coluna
+                print(f"✓ CORRESPONDÊNCIA ENCONTRADA! Preço {preco_venda} = valor na coluna {coluna}")
+                break
+        
+        if comissao_encontrada:
+            # Converter o nome do cabeçalho para número (ex: '0,5' -> 0.5)
+            comissao_valor = float(comissao_encontrada.replace(',', '.'))
+            print(f"Comissão LOURENCINI aplicada: {comissao_valor} (da coluna {comissao_encontrada})")
+        else:
+            # Se não encontrou correspondência, usar regra normal
+            print("Nenhuma correspondência encontrada, usando regra normal")
+            comissao_valor = (row['Preço Venda'] * row['P. Com'])
+        
+        return comissao_valor
+        
+    except Exception as e:
+        print(f"Erro ao calcular comissão para '{row.get('CODPRODUTO', 'N/A')}': {e}")
+        return (row['Preço Venda'] * row['P. Com'])
+
+# Aplicar a função para Comissão Kg
+print("Calculando Comissão Kg...")
+base_df['Comissão Kg'] = base_df.apply(calcular_comissao_kg, axis=1)
+
+# CORREÇÃO: Garantir que todas as colunas tenham valores, não métodos
+# Converter qualquer método para string/valor apropriado
+for col in base_df.columns:
+    if base_df[col].dtype == 'object':
+        # Se a coluna contém métodos, converter para string
+        base_df[col] = base_df[col].astype(str)
 
 # 15. Comissão Real
 base_df['Comissão Real'] = base_df.apply(
-    lambda row: row['Fat Liquido'] * row['P. Com'] if row['Preço Venda'] > 0 
-    else -(row['Fat Liquido'] * row['P. Com']), axis=1
+    lambda row: row['Comissão Kg'] * row['QTDE AJUSTADA'] if row['Preço Venda'] > 0 
+    else -(row['Comissão Kg'] * row['QTDE AJUSTADA']), axis=1
 )
 
 # 16. Coleta Esc
@@ -641,10 +806,11 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
     cancelados.to_excel(writer, sheet_name='Base_cancelamento', index=False)
     devolucoes.to_excel(writer, sheet_name='Base_movimentacao', index=False)
     fechamento.to_excel(writer, sheet_name='Base_Fechamento', index=False)
+    
+    if not lourencini.empty:
+        lourencini.to_excel(writer, sheet_name='LOURENCINI', index=False)
 
-# Salvar também como JSON
-json_path = f"C:\\Users\\win11\\Downloads\\Margem_{data_nome_arquivo}.json"
-
+# CORREÇÃO: Função de serialização para JSON
 def default_serializer(obj):
     if isinstance(obj, (np.integer, int)):
         return int(obj)
@@ -660,10 +826,22 @@ def default_serializer(obj):
         return None
     elif obj in [np.inf, -np.inf]:
         return None
+    elif callable(obj):  # CORREÇÃO: Se for um método/função, retornar string vazia
+        return ""
+    elif hasattr(obj, '__call__'):  # CORREÇÃO: Se for callable
+        return ""
     raise TypeError(f"Type {type(obj)} not serializable")
 
+# Salvar também como JSON
+json_path = f"C:\\Users\\win11\\Downloads\\Margem_{data_nome_arquivo}.json"
+
+# CORREÇÃO: Garantir que o DataFrame não contenha métodos antes de serializar
+base_df_clean = base_df.copy()
+for col in base_df_clean.columns:
+    base_df_clean[col] = base_df_clean[col].apply(lambda x: "" if callable(x) else x)
+
 with open(json_path, 'w', encoding='utf-8') as f:
-    json.dump(base_df.to_dict(orient='records'), f, ensure_ascii=False, indent=4, default=default_serializer)
+    json.dump(base_df_clean.to_dict(orient='records'), f, ensure_ascii=False, indent=4, default=default_serializer)
 
 print(f"\nArquivo Excel salvo em: {output_path}")
 print(f"Arquivo JSON salvo em: {json_path}")
