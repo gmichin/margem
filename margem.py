@@ -400,13 +400,6 @@ else:
 # MODIFICAÇÃO SOLICITADA: Substituir 4% por 3.5% na coluna Escritório
 base_df['Escritório'] = base_df['Escritório'].apply(lambda x: 0.035 if abs(x - 0.04) < 0.001 else x)
 
-# 8. P. Com
-if 'P.COM' in fechamento_sem_cancelados.columns:
-    base_df['P. Com'] = fechamento_sem_cancelados['P.COM'].fillna(0)
-else:
-    base_df['P. Com'] = 0
-
-    
 # 9. Desc. Valor - SOLUÇÃO ALTERNATIVA
 # Mapear diretamente pelo índice para garantir correspondência
 base_df['Desc Perc'] = 0  # Inicializar com zero
@@ -580,10 +573,35 @@ def calcular_comissao_kg(row):
     except Exception as e:
         print(f"Erro ao calcular comissão para '{row.get('CODPRODUTO', 'N/A')}': {e}")
         return (row['Preço Venda'] * row['P. Com'])
-    
-# Aplicar a função para Comissão Kg
+
+# CORREÇÃO: PRIMEIRO inicializar P. Com com 0 para evitar erro na função calcular_comissao_kg
+base_df['P. Com'] = 0
+
+# AGORA calcular Comissão Kg
 print("Calculando Comissão Kg...")
 base_df['Comissão Kg'] = base_df.apply(calcular_comissao_kg, axis=1)
+
+# CORREÇÃO: AGORA recalcular P. Com baseado na Comissão Kg
+print("Recalculando P. Com baseado na Comissão Kg...")
+
+def calcular_p_com(row):
+    """
+    Calcula P.Com baseado na Comissão Kg e Preço Venda
+    Se Comissão Kg > 0: P.Com = Comissão Kg / Preço Venda
+    Caso contrário: 0 (para teste)
+    """
+    try:
+        comissao_kg = row['Comissão Kg']
+        preco_venda = row['Preço Venda']
+        
+        if comissao_kg > 0 and preco_venda > 0:
+            return comissao_kg / preco_venda
+        else:
+            return 0
+    except:
+        return 0
+
+base_df['P. Com'] = base_df.apply(calcular_p_com, axis=1)
 
 # CORREÇÃO: Garantir que todas as colunas tenham valores, não métodos
 # Converter qualquer método para string/valor apropriado
@@ -861,4 +879,15 @@ with open(json_path, 'w', encoding='utf-8') as f:
 
 print(f"\nArquivo Excel salvo em: {output_path}")
 print(f"Arquivo JSON salvo em: {json_path}")
-print("Processo concluído!\n") 
+print("Processo concluído!\n")
+
+# VERIFICAÇÃO DO CÁLCULO P.Com
+print("\n✅ VERIFICAÇÃO DO CÁLCULO P.Com:")
+verificacao = base_df[['Comissão Kg', 'Preço Venda', 'P. Com']].copy()
+verificacao['P. Com Calculado'] = verificacao.apply(
+    lambda x: x['Comissão Kg'] / x['Preço Venda'] if x['Preço Venda'] > 0 else 0, 
+    axis=1
+)
+verificacao['Status'] = np.isclose(verificacao['P. Com'], verificacao['P. Com Calculado'], rtol=1e-10)
+print(verificacao.head(10))
+print(f"\nCálculos corretos: {verificacao['Status'].sum()}/{len(verificacao)}")
