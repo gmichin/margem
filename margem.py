@@ -584,24 +584,186 @@ base_df['Comissão Kg'] = base_df.apply(calcular_comissao_kg, axis=1)
 # CORREÇÃO: AGORA recalcular P. Com baseado na Comissão Kg
 print("Recalculando P. Com baseado na Comissão Kg...")
 
-def calcular_p_com(row):
+def criar_regras_comissao_fixa():
+    regras = {
+        'geral': {
+            0.00: {  # 0%
+                'grupos': [
+                    'REDE AKKI', 'VAREJO ANDORINHA', 'VAREJO BERGAMINI', 'REDE DA PRACA', 'REDE DOVALE',
+                    'REDE MERCADAO', 'REDE REIMBERG', 'REDE SEMAR', 'REDE TRIMAIS', 'REDE VOVO ZUZU',
+                    'REDE BENGALA', 'VAREJO OURINHOS'
+                ],
+                'razoes': [
+                    'COMERCIO DE CARNES E ROTISSERIE DUTRA LT',
+                    'DISTRIBUIDORA E COMERCIO UAI SP LTDA',
+                    "GARFETO'S FORNECIMENTO DE REFEICOES LTDA", "LATICINIO SOBERANO LTDA VILA ALPINA",
+                    "SAO LORENZO ALIMENTOS LTDA",
+                    "QUE DELICIA MENDES COMERCIO DE ALIMENTOS",
+                    "MARIANA OLIVEIRA MAZZEI",
+                    "LS SANTOS COMERCIO DE ALIMENTOS LTDA"
+                ]
+            },
+            0.03: {  # 3%
+                'grupos': ['VAREJO CALVO', 'REDE CHAMA', 'REDE ESTRELA AZUL', 'REDE TENDA', 'REDE HIGAS'],
+            },
+            0.01: {  # 1%
+                'grupos': ['REDE ROLDAO'],
+                'razoes': ['SHOPPING FARTURA VALINHOS COMERCIO LTDA']
+            }
+        },
+        'grupos_especificos': {
+            'REDE STYLLUS': {
+                0.00: {  # 0%
+                    'grupos_produto': ['TORRESMO', 'SALAME UAI', 'EMPANADOS']
+                }
+            },
+            'REDE ROSSI': {
+                0.03: [1288, 1289, 1287, 937, 1698, 1701, 1587, 1700, 1586, 1699],  # 3%
+                0.01: [1265, 1266, 812, 1115, 798, 1211],  # 1%
+                0.00: {  # 0%
+                    'grupos_produto': ['EMBUTIDOS', 'EMBUTIDOS NOBRE', 'EMBUTIDOS SADIA', 
+                                       'EMBUTIDOS PERDIGAO', 'EMBUTIDOS AURORA', 'EMBUTIDOS SEARA', 
+                                       'SALAME UAI'],
+                    'codigos': [1139]
+                },
+                0.02: {  # 2%
+                    'grupos_produto': ['MIUDOS BOVINOS', 'SUINOS', 'SALGADOS SUINOS A GRANEL'],
+                    'codigos': [700]
+                }
+            },
+            'REDE PLUS': {
+                0.03: {  # 3%
+                    'grupos_produto': ['TEMPERADOS'],
+                    'codigos': [812]
+                }
+            },
+            'REDE CENCOSUD': {
+                0.01: {  # 1%
+                    'grupos_produto': ['SALAME UAI']
+                },
+                0.03: {  # 3%
+                    'todos_exceto': ['SALGADOS SUINOS EMBALADOS']
+                }
+            },
+            'REDE ROLDAO': {
+                0.00: {  # 0%
+                    'grupos_produto': [
+                        'CONGELADOS', 'CORTES DE FRANGO', 'EMBUTIDOS', 
+                        'EMBUTIDOS AURORA', 'EMBUTIDOS NOBRE', 'EMBUTIDOS PERDIGÃO', 
+                        'EMBUTIDOS SADIA', 'EMBUTIDOS SEARA', 'EMPANADOS', 
+                        'KITS FEIJOADDA', 'SUINOS', 'TEMPERADOS'
+                    ]
+                },
+                0.01: {  # 1%
+                    'todos_exceto': [
+                        'CONGELADOS', 'CORTES BOVINOS', 'CORTES DE FRANGO', 'EMBUTIDOS', 
+                        'EMBUTIDOS AURORA', 'EMBUTIDOS NOBRE', 'EMBUTIDOS PERDIGÃO', 
+                        'EMBUTIDOS SADIA', 'EMBUTIDOS SEARA', 'EMPANADOS', 
+                        'KITS FEIJOADDA', 'MIUDOS BOVINOS', 'SUINOS', 'TEMPERADOS'
+                    ]
+                }
+            }
+        },
+        'razoes_especificas': {
+            'PAES E DOCES LEKA LTDA': {
+                0.03: [1893, 1886]  # 3%
+            },
+            'PAES E DOCES MICHELLI LTDA': {
+                0.03: [1893, 1886]  # 3%
+            },
+            'WANDERLEY GOMES MORENO': {
+                0.03: [1893, 1886]  # 3%
+            }
+        }
+    }
+    return regras
+
+def calcular_p_com_com_regras_fixas(row):
     """
     Calcula P.Com baseado na Comissão Kg e Preço Venda
+    Se Comissão Kg <= 0: aplica regras fixas
     Se Comissão Kg > 0: P.Com = Comissão Kg / Preço Venda
-    Caso contrário: 0 (para teste)
     """
     try:
         comissao_kg = row['Comissão Kg']
         preco_venda = row['Preço Venda']
         
+        # Se comissão_kg for maior que zero, usa cálculo normal
         if comissao_kg > 0 and preco_venda > 0:
             return comissao_kg / preco_venda
+        
+        # Se comissão_kg for menor ou igual a zero, aplica regras fixas
+        elif comissao_kg <= 0:
+            return aplicar_regras_comissao_fixa(row)
         else:
             return 0
     except:
-        return 0
+        return aplicar_regras_comissao_fixa(row)
 
-base_df['P. Com'] = base_df.apply(calcular_p_com, axis=1)
+def aplicar_regras_comissao_fixa(row):
+    """
+    Aplica as regras de comissão fixa baseado no grupo, razão social e código do produto
+    """
+    try:
+        regras = criar_regras_comissao_fixa()
+        
+        # Extrair dados da linha
+        grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
+        razao = str(row['RAZAO']).strip() if pd.notna(row['RAZAO']) else ''
+        fantasia = str(row['FANTASIA']).strip() if pd.notna(row['FANTASIA']) else ''
+        grupo_produto = str(row['GRUPO PRODUTO']).strip() if pd.notna(row['GRUPO PRODUTO']) else ''
+        codproduto = int(row['CODPRODUTO']) if pd.notna(row['CODPRODUTO']) and str(row['CODPRODUTO']).strip().isdigit() else None
+        
+        # 1. Verificar regras gerais por grupo
+        for comissao, regra in regras['geral'].items():
+            # Verificar por grupo
+            if 'grupos' in regra and grupo in regra['grupos']:
+                return comissao
+            
+            # Verificar por razão social
+            if 'razoes' in regra and (razao in regra['razoes'] or fantasia in regra['razoes']):
+                return comissao
+        
+        # 2. Verificar regras por grupos específicos
+        if grupo in regras['grupos_especificos']:
+            regras_grupo = regras['grupos_especificos'][grupo]
+            
+            # Verificar por códigos específicos (lista simples)
+            for comissao, regra in regras_grupo.items():
+                if isinstance(regra, list) and codproduto in regra:
+                    return comissao
+            
+            # Verificar por grupos de produto e códigos (dicionário)
+            for comissao, regra in regras_grupo.items():
+                if isinstance(regra, dict):
+                    # Verificar por grupo de produto
+                    if 'grupos_produto' in regra and grupo_produto in regra['grupos_produto']:
+                        return comissao
+                    
+                    # Verificar por código específico
+                    if 'codigos' in regra and codproduto in regra['codigos']:
+                        return comissao
+                    
+                    # Verificar por "todos_exceto"
+                    if 'todos_exceto' in regra and grupo_produto not in regra['todos_exceto']:
+                        return comissao
+        
+        # 3. Verificar regras por razões sociais específicas
+        for razao_especifica, regras_razao in regras['razoes_especificas'].items():
+            if razao == razao_especifica or fantasia == razao_especifica:
+                for comissao, codigos in regras_razao.items():
+                    if codproduto in codigos:
+                        return comissao
+        
+        # Se não encontrou nenhuma regra, retorna 0
+        return 0.00
+        
+    except Exception as e:
+        print(f"Erro ao aplicar regras de comissão fixa: {e}")
+        return 0.00
+
+# NO CÓDIGO PRINCIPAL, SUBSTITUA A FUNÇÃO calcular_p_com POR:
+base_df['P. Com'] = base_df.apply(calcular_p_com_com_regras_fixas, axis=1)
 
 # CORREÇÃO: Garantir que todas as colunas tenham valores, não métodos
 # Converter qualquer método para string/valor apropriado
