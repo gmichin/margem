@@ -462,11 +462,9 @@ base_df['Aniversário'] = base_df.apply(
     lambda row: 0 if row['CF'] == "DEV" else row['Fat. Bruto'] * 0.01, axis=1
 )
 
-# 14. Comissão Kg - FUNÇÃO CORRIGIDA
 def calcular_comissao_kg(row):
     """
-    Calcula a comissão kg com regra especial para o grupo LOURENCINI
-    Compara PRECO VENDA com os valores dentro das células da tabela LOURENCINI
+    Calcula a comissão kg com regras específicas por vendedor, produto e grupo
     """
     try:
         # Se for devolução
@@ -474,33 +472,65 @@ def calcular_comissao_kg(row):
             comissao = -(row['Preço Venda'] * row['P. Com'])
             return comissao
         
+        # REGRAS ESPECÍFICAS POR VENDEDOR, PRODUTO E GRUPO
+        vendedor = str(row['VENDEDOR']).strip() if pd.notna(row['VENDEDOR']) else ''
+        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ''
+        grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
+        
+        # Caso 1: LUIZ FERNANDO VOLTERO BARBOSA - COD 812
+        if vendedor == "LUIZ FERNANDO VOLTERO BARBOSA" and codproduto == "812":
+            if grupo == "CHAMA":
+                return 3
+            elif grupo == "PARANA":
+                return 3
+            elif grupo == "REDE PLUS":
+                return 2
+        
+        # Caso 2: FELIPE RAMALHO GOMES - COD 700
+        elif vendedor == "FELIPE RAMALHO GOMES" and codproduto == "700":
+            if grupo == "PEDREIRA":
+                return 2
+            elif grupo == "BERGAMINI":
+                return 0.5
+        
+        # Caso 3: VALDENIR VOLTERO - COD 812, 937, 1624
+        elif vendedor == "VALDENIR VOLTERO":
+            if codproduto == "812" and grupo == "RICOY":
+                return 1
+            elif codproduto == "937" and grupo == "RICOY":
+                return 0.5
+            elif codproduto == "1624" and grupo == "RICOY":
+                return 0.5
+        
+        # Caso 4: ROSE VOLTERO - COD 812 (qualquer grupo)
+        elif vendedor == "ROSE VOLTERO" and codproduto == "812":
+            return 2
+        
+        # Caso 5: VERA LUCIA MUNIZ - COD 812 (qualquer grupo)
+        elif vendedor == "VERA LUCIA MUNIZ" and codproduto == "812":
+            return 2
+        
+        # Caso 6: PAMELA FERREIRA VIEIRA - COD 812 (qualquer grupo)
+        elif vendedor == "PAMELA FERREIRA VIEIRA" and codproduto == "812":
+            return 2
+        
         # Se não for grupo LOURENCINI ou arquivo não carregado, aplicar regra normal
         if row['GRUPO'] != "LOURENCINI" or lourencini.empty:
             comissao = (row['Preço Venda'] * row['P. Com'])
             return comissao
         
-        # REGRA ESPECIAL PARA LOURENCINI
-        # CORREÇÃO: Garantir que estamos pegando o valor, não o método
-        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ''
+        # REGRA ESPECIAL PARA LOURENCINI (mantida do código original)
         data_venda = row['DATA']
         preco_venda = row['Preço Venda']
         
-        print(f"\n=== Processando LOURENCINI ===")
-        print(f"COD: '{codproduto}', Data: {data_venda}, Preço: {preco_venda}")
-        
         if not codproduto or codproduto == 'nan' or pd.isna(data_venda) or pd.isna(preco_venda) or preco_venda == 0:
-            print("Dados inválidos, usando regra normal")
             return (row['Preço Venda'] * row['P. Com'])
         
         # Buscar matching exato após limpeza
         lourencini_filtrado = lourencini[lourencini['COD'] == codproduto]
         
         if lourencini_filtrado.empty:
-            print(f"COD '{codproduto}' não encontrado no arquivo LOURENCINI")
-            print(f"CODs disponíveis: {sorted(lourencini['COD'].unique().tolist())}")
             return (row['Preço Venda'] * row['P. Com'])
-        
-        print(f"Encontrado {len(lourencini_filtrado)} registros para COD '{codproduto}'")
         
         # Converter data_venda para datetime para comparação
         data_venda_dt = pd.Timestamp(data_venda)
@@ -516,55 +546,41 @@ def calcular_comissao_kg(row):
             ]
             if not lourencini_periodo.empty:
                 lourencini_row = lourencini_periodo.iloc[0]
-                print(f"Encontrado por período: {lourencini_row['Data'].date()} a {lourencini_row['Data_fim'].date()}")
         
         # Se não encontrou por período, buscar a última data anterior mais próxima
         if lourencini_row is None:
             lourencini_anteriores = lourencini_filtrado[lourencini_filtrado['Data'] <= data_venda_dt]
             if not lourencini_anteriores.empty:
-                # Ordenar por data descendente e pegar a mais recente
                 lourencini_anteriores = lourencini_anteriores.sort_values('Data', ascending=False)
                 lourencini_row = lourencini_anteriores.iloc[0]
-                print(f"Encontrado por data anterior mais próxima: {lourencini_row['Data'].date()}")
             else:
-                # Se não há datas anteriores, usar a primeira data disponível (mais antiga)
                 lourencini_filtrado = lourencini_filtrado.sort_values('Data', ascending=True)
                 lourencini_row = lourencini_filtrado.iloc[0]
-                print(f"Usando primeira data disponível: {lourencini_row['Data'].date()}")
         
-        # CORREÇÃO: Agora comparar o PRECO VENDA com os VALORES dentro das células
-        # e usar o NOME DO CABEÇALHO da coluna correspondente como comissão
+        # Comparar o PRECO VENDA com os VALORES dentro das células
         colunas_comissao = ['0,2', '0,3', '0,5', '0,7', '1']
         comissao_encontrada = None
         
-        print(f"Preço Venda: {preco_venda}")
-        print("Valores nas colunas da linha encontrada:")
-        
         for coluna in colunas_comissao:
             valor_na_tabela = lourencini_row[coluna]
-            print(f"  {coluna}: {valor_na_tabela}")
             
             # Comparar o PRECO VENDA com o valor dentro da célula
-            if pd.notna(valor_na_tabela) and abs(preco_venda - valor_na_tabela) < 0.01:  # Tolerância de 0.01 para floats
+            if pd.notna(valor_na_tabela) and abs(preco_venda - valor_na_tabela) < 0.01:
                 comissao_encontrada = coluna
-                print(f"✓ CORRESPONDÊNCIA ENCONTRADA! Preço {preco_venda} = valor na coluna {coluna}")
                 break
         
         if comissao_encontrada:
             # Converter o nome do cabeçalho para número (ex: '0,5' -> 0.5)
             comissao_valor = float(comissao_encontrada.replace(',', '.'))
-            print(f"Comissão LOURENCINI aplicada: {comissao_valor} (da coluna {comissao_encontrada})")
+            return comissao_valor
         else:
             # Se não encontrou correspondência, usar regra normal
-            print("Nenhuma correspondência encontrada, usando regra normal")
-            comissao_valor = (row['Preço Venda'] * row['P. Com'])
-        
-        return comissao_valor
+            return (row['Preço Venda'] * row['P. Com'])
         
     except Exception as e:
         print(f"Erro ao calcular comissão para '{row.get('CODPRODUTO', 'N/A')}': {e}")
         return (row['Preço Venda'] * row['P. Com'])
-
+    
 # Aplicar a função para Comissão Kg
 print("Calculando Comissão Kg...")
 base_df['Comissão Kg'] = base_df.apply(calcular_comissao_kg, axis=1)
@@ -845,4 +861,4 @@ with open(json_path, 'w', encoding='utf-8') as f:
 
 print(f"\nArquivo Excel salvo em: {output_path}")
 print(f"Arquivo JSON salvo em: {json_path}")
-print("Processo concluído!\n")
+print("Processo concluído!\n") 
