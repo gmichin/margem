@@ -4,7 +4,7 @@ from datetime import date
 import warnings
 import json
 import openpyxl.styles
-from openpyxl.styles import numbers
+from openpyxl.styles import numbers, Alignment
 
 warnings.filterwarnings('ignore')
 
@@ -725,6 +725,16 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
     workbook = writer.book
     font_size = 10
     
+    # Definir colunas para centralizar (INCLUINDO as de porcentagem)
+    colunas_para_centralizar = [
+        'CF', 'OS', 'NF-E', 'CF_NF', 'DATA', 'CODPRODUTO', 'QTDE', 'QTDE REAL', 
+        'CUSTO EM SISTEMA', 'QTDE AJUSTADA', 'QTDE REAL2', 'Escritório', 'P. Com', 
+        'Desc Perc', 'Margem', 'Quinzena', 'INCL.', 'comissão', 'Escr.', 'frete', 
+        'Custo divergente', 'TP', 'PK', 'Coluna2', 'FRETE - LUC/PREJ', 'CUST PROD', 
+        'COM BRUTA', 'DESC FEC', 'ESC FEC', 'ICMS FEC', 'PRC VEND FEV', 'DESC', 
+        'ESC', 'ICMS', 'PRC VEND', 'Coluna1', 'DESCRIÇÃO_1', 'DESCRIÇÃO_2'
+    ]
+    
     # Definir colunas para formatação monetária (formato Real brasileiro)
     colunas_monetarias = [
         'CUSTO', 'Custo real', 'Frete', 'Produção', 'Comissão Kg', 'Aniversário',
@@ -733,32 +743,76 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
         'Armazenagem', 'Comissão por Regra', 'CUST + IMP'
     ]
     
+    # Definir colunas para formatação de porcentagem com 2 casas decimais
+    colunas_porcentagem = [
+        'Escritório', 'P. Com', 'Desc Perc', 'Margem', 'comissão', 'Escr.', 'frete',
+        'DESC FEC', 'ESC FEC'
+    ]
+    
     for sheet_name in writer.sheets:
         worksheet = writer.sheets[sheet_name]
         
-        # Primeiro, encontrar os índices das colunas monetárias
+        # Primeiro, encontrar os índices das colunas
         if sheet_name == 'base (3,5%)':
-            col_indices = {}
+            col_indices_monetarias = {}
+            col_indices_porcentagem = {}
+            col_indices_centralizar = {}
+            
             for col_num in range(1, worksheet.max_column + 1):
                 col_name = worksheet.cell(row=1, column=col_num).value
                 if col_name in colunas_monetarias:
-                    col_indices[col_num] = col_name
+                    col_indices_monetarias[col_num] = col_name
+                if col_name in colunas_porcentagem:
+                    col_indices_porcentagem[col_num] = col_name
+                if col_name in colunas_para_centralizar:
+                    col_indices_centralizar[col_num] = col_name
+        
+        # APLICAR CENTRALIZAÇÃO PARA AS COLUNAS ESPECIFICADAS (incluindo porcentagem)
+        if sheet_name == 'base (3,5%)':
+            for col_num in col_indices_centralizar:
+                col_letter = openpyxl.utils.get_column_letter(col_num)
+                
+                # Aplicar alinhamento centralizado para TODA a coluna (incluindo cabeçalho)
+                for row_num in range(1, worksheet.max_row + 1):
+                    cell = worksheet[f'{col_letter}{row_num}']
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
         
         # Aplicar formatação monetária para TODAS as células das colunas monetárias
         if sheet_name == 'base (3,5%)':
-            for col_num in col_indices:
+            for col_num in col_indices_monetarias:
                 col_letter = openpyxl.utils.get_column_letter(col_num)
                 
                 # Aplicar o formato de moeda brasileiro completo para toda a coluna
-                # Formato: Positivo; Negativo; Zero; Texto
-                for row_num in range(2, worksheet.max_row + 1):  # Começa da linha 2 (pula cabeçalho)
+                for row_num in range(2, worksheet.max_row + 1):
                     cell = worksheet[f'{col_letter}{row_num}']
                     if cell.value is not None:
                         try:
                             float(cell.value)
                             # Formato com R$ à esquerda e número à direita
-                            # O * (asterisco) repete o próximo caractere para preencher o espaço
                             cell.number_format = '"R$"* #,##0.00;[Red]"R$"* -#,##0.00;"R$"* -'
+                            # Manter a centralização se a coluna também estiver na lista de centralizar
+                            if col_num in col_indices_centralizar:
+                                cell.alignment = Alignment(horizontal='center', vertical='center', 
+                                                         number_format='"R$"* #,##0.00;[Red]"R$"* -#,##0.00;"R$"* -')
+                        except (ValueError, TypeError):
+                            pass
+        
+        # Aplicar formatação de porcentagem com 2 casas decimais E centralização
+        if sheet_name == 'base (3,5%)':
+            for col_num in col_indices_porcentagem:
+                col_letter = openpyxl.utils.get_column_letter(col_num)
+                
+                # Aplicar o formato de porcentagem para toda a coluna COM centralização
+                for row_num in range(2, worksheet.max_row + 1):
+                    cell = worksheet[f'{col_letter}{row_num}']
+                    if cell.value is not None:
+                        try:
+                            float(cell.value)
+                            # Formato de porcentagem com 2 casas decimais E centralização
+                            cell.number_format = '0.00%'
+                            # Garantir que as colunas de porcentagem também fiquem centralizadas
+                            cell.alignment = Alignment(horizontal='center', vertical='center', 
+                                                     number_format='0.00%')
                         except (ValueError, TypeError):
                             pass
         
@@ -766,6 +820,9 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
         for row in worksheet.iter_rows():
             for cell in row:
                 cell.font = openpyxl.styles.Font(size=font_size)
+                # Garantir que o cabeçalho das colunas de porcentagem também fique centralizado
+                if cell.row == 1 and cell.column in col_indices_porcentagem:
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
         
         # Ajustar automaticamente o tamanho das colunas
         for column in worksheet.columns:
@@ -777,8 +834,9 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                         max_length = len(str(cell.value))
                 except:
                     pass
-            adjusted_width = min(max_length + 2, 50)  # Limite máximo de 50
+            adjusted_width = min(max_length + 2, 50)
             worksheet.column_dimensions[column_letter].width = adjusted_width
+
 
 # Salvar JSON (código original mantido)
 def default_serializer(obj):
