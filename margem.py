@@ -4,6 +4,7 @@ from datetime import date
 import warnings
 import json
 import openpyxl.styles
+from openpyxl.styles import numbers
 
 warnings.filterwarnings('ignore')
 
@@ -18,6 +19,7 @@ fechamento = pd.read_csv(r"C:\Users\win11\Downloads\fechamento.csv", sep=';', en
 cancelados = pd.read_csv(r"C:\Users\win11\Downloads\cancelados.csv", sep=';', encoding='utf-8', decimal=',', thousands='.', skiprows=2)
 devolucoes = pd.read_csv(r"C:\Users\win11\Downloads\movimentação.csv", sep=';', encoding='utf-8', decimal=',', thousands='.')
 custos_produtos = pd.read_excel(r"C:\Users\win11\Downloads\Custos de produtos - Julho.xlsx", sheet_name='Base', dtype=str)
+
 
 # Carregar LOURENCINI
 try:
@@ -701,6 +703,8 @@ colunas_ordenadas = [
 colunas_existentes = [col for col in colunas_ordenadas if col in base_df.columns]
 base_df = base_df[colunas_existentes]
 base_df = base_df.fillna("")
+
+
 # Salvar arquivos
 print("💾 Salvando arquivos...")
 output_path = f"C:\\Users\\win11\\Downloads\\Margem_{data_nome_arquivo}.xlsx"
@@ -721,8 +725,42 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
     workbook = writer.book
     font_size = 10
     
+    # Definir colunas para formatação monetária (formato Real brasileiro)
+    colunas_monetarias = [
+        'CUSTO', 'Custo real', 'Frete', 'Produção', 'Comissão Kg', 'Aniversário',
+        'VL ICMS', 'Desc. Valor', 'Preço Venda', 'Fat Liquido', 'Fat. Bruto',
+        'Lucro / Prej.', 'Comissão Real', 'Coleta Esc', 'Frete Real',
+        'Armazenagem', 'Comissão por Regra', 'CUST + IMP'
+    ]
+    
     for sheet_name in writer.sheets:
         worksheet = writer.sheets[sheet_name]
+        
+        # Primeiro, encontrar os índices das colunas monetárias
+        if sheet_name == 'base (3,5%)':
+            col_indices = {}
+            for col_num in range(1, worksheet.max_column + 1):
+                col_name = worksheet.cell(row=1, column=col_num).value
+                if col_name in colunas_monetarias:
+                    col_indices[col_num] = col_name
+        
+        # Aplicar formatação monetária para TODAS as células das colunas monetárias
+        if sheet_name == 'base (3,5%)':
+            for col_num in col_indices:
+                col_letter = openpyxl.utils.get_column_letter(col_num)
+                
+                # Aplicar o formato de moeda brasileiro completo para toda a coluna
+                # Formato: Positivo; Negativo; Zero; Texto
+                for row_num in range(2, worksheet.max_row + 1):  # Começa da linha 2 (pula cabeçalho)
+                    cell = worksheet[f'{col_letter}{row_num}']
+                    if cell.value is not None:
+                        try:
+                            float(cell.value)
+                            # Formato com R$ à esquerda e número à direita
+                            # O * (asterisco) repete o próximo caractere para preencher o espaço
+                            cell.number_format = '"R$"* #,##0.00;[Red]"R$"* -#,##0.00;"R$"* -'
+                        except (ValueError, TypeError):
+                            pass
         
         # Aplicar fonte tamanho 10 para todas as células
         for row in worksheet.iter_rows():
