@@ -4,7 +4,7 @@ from datetime import date
 import warnings
 import json
 import openpyxl.styles
-from openpyxl.styles import numbers, Alignment
+from openpyxl.styles import Alignment
 
 warnings.filterwarnings('ignore')
 
@@ -173,7 +173,14 @@ fechamento['PK'] = fechamento['ROMANEIO'].astype(str) + "_" + fechamento['NF-E']
 for _, row in fechamento.iterrows():
     try:
         if pd.notna(row['QUINZENA']):
-            quinzena_dict[row['PK']] = str(row['QUINZENA'])
+            quinzena_value = str(row['QUINZENA'])
+            # Converter para o novo formato
+            if quinzena_value == "Primeira Quinzena":
+                quinzena_dict[row['PK']] = "1ª Quinzena"
+            elif quinzena_value == "Segunda Quinzena":
+                quinzena_dict[row['PK']] = "2ª Quinzena"
+            else:
+                quinzena_dict[row['PK']] = quinzena_value
     except:
         continue
 
@@ -190,11 +197,18 @@ for _, row in fechamento.iterrows():
     pk = str(row['ROMANEIO']) + "_" + str(row['NF-E']) + "_" + str(row['CODPRODUTO'])
     desconto_verificado = row['Desconto verificado'] if 'Desconto verificado' in fechamento.columns and pd.notna(row['Desconto verificado']) else np.nan
     
+    quinzena_value = row['QUINZENA'] if 'QUINZENA' in fechamento.columns and pd.notna(row['QUINZENA']) else ""
+    # Converter para o novo formato
+    if quinzena_value == "Primeira Quinzena":
+        quinzena_value = "1ª Quinzena"
+    elif quinzena_value == "Segunda Quinzena":
+        quinzena_value = "2ª Quinzena"
+    
     fechamento_pk_dict[pk] = {
         'ESCRITORIO': row['ESCRITORIO'] if 'ESCRITORIO' in fechamento.columns and pd.notna(row['ESCRITORIO']) else np.nan,
         'VLR ICMS': row['VLR ICMS'] if 'VLR ICMS' in fechamento.columns and pd.notna(row['VLR ICMS']) else np.nan,
         'PRECO VENDA': row['PRECO VENDA'] if 'PRECO VENDA' in fechamento.columns and pd.notna(row['PRECO VENDA']) else np.nan,
-        'QUINZENA': row['QUINZENA'] if 'QUINZENA' in fechamento.columns and pd.notna(row['QUINZENA']) else "",
+        'QUINZENA': quinzena_value,
         'DESCONTO_VERIFICADO': desconto_verificado,
         'MOV': row['Mov'] if 'Mov' in fechamento.columns and pd.notna(row['Mov']) else "",
         'MOV_V2': row['Mov V2'] if 'Mov V2' in fechamento.columns and pd.notna(row['Mov V2']) else ""
@@ -824,17 +838,30 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                 if cell.row == 1 and cell.column in col_indices_porcentagem:
                     cell.alignment = Alignment(horizontal='center', vertical='center')
         
-        # Ajustar automaticamente o tamanho das colunas
         for column in worksheet.columns:
             max_length = 0
             column_letter = column[0].column_letter
+
             for cell in column:
                 try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
+                    if cell.value is not None:
+                        # Considerar o comprimento do conteúdo, mas com limites razoáveis
+                        cell_length = len(str(cell.value))
+
+                        # Aplicar limites diferentes baseados no tipo de conteúdo estimado
+                        if any(char.isdigit() for char in str(cell.value)) and not any(char.isalpha() for char in str(cell.value)):
+                            # Provavelmente é número/data - largura menor
+                            max_length = max(min(cell_length, 12), max_length)
+                        else:
+                            # É texto - largura maior mas ainda limitada
+                            max_length = max(min(cell_length, 25), max_length)
                 except:
                     pass
-            adjusted_width = min(max_length + 2, 50)
+                
+            # Ajustar largura final com limites sensatos
+            adjusted_width = min(max_length + 2, 30)  # Máximo de 30
+            adjusted_width = max(adjusted_width, 10)   # Mínimo de 10 para legibilidade
+
             worksheet.column_dimensions[column_letter].width = adjusted_width
 
 
