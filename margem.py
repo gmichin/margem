@@ -31,6 +31,18 @@ try:
         lourencini = lourencini[lourencini['COD'] != 'nan']
         lourencini = lourencini.dropna(subset=['COD'])
         
+        # Converter COD para inteiro onde possível
+        def converter_para_int_se_possivel(valor):
+            try:
+                if pd.isna(valor) or valor == '':
+                    return np.nan
+                return int(float(valor))
+            except (ValueError, TypeError):
+                return np.nan
+        
+        lourencini['COD'] = lourencini['COD'].apply(converter_para_int_se_possivel)
+        lourencini = lourencini.dropna(subset=['COD'])
+        
         colunas_preco = ['0,2', '0,3', '0,5', '0,7', '1']
         for col in colunas_preco:
             lourencini[col] = pd.to_numeric(lourencini[col], errors='coerce')
@@ -71,7 +83,27 @@ for coluna in colunas_numericas:
             pass
 
 custos_produtos['DATA'] = pd.to_datetime(custos_produtos['DATA'], errors='coerce', dayfirst=True)
-custos_produtos['CODPRODUTO'] = custos_produtos['CODPRODUTO'].astype(str).str.strip()
+
+# Função para converter CODPRODUTO para inteiro
+def converter_codproduto_para_int(df, coluna='CODPRODUTO'):
+    df[coluna] = df[coluna].astype(str).str.strip()
+    df[coluna] = df[coluna].str.replace(r'\.0$', '', regex=True)
+    df[coluna] = df[coluna].str.replace(r'^0+', '', regex=True)
+    df[coluna] = df[coluna].str.strip()
+    
+    def converter_para_int(valor):
+        try:
+            if pd.isna(valor) or valor == '' or valor == 'nan':
+                return np.nan
+            # Tentar converter para float primeiro e depois para int
+            return int(float(valor))
+        except (ValueError, TypeError):
+            return np.nan
+    
+    df[coluna] = df[coluna].apply(converter_para_int)
+    return df
+
+custos_produtos = converter_codproduto_para_int(custos_produtos)
 
 # Carregar OFERTAS_VOG
 try:
@@ -188,11 +220,9 @@ base_df['CF_NF'] = fechamento_sem_cancelados['CF_NF'].fillna("")
 base_df['DATA'] = pd.to_datetime(fechamento_sem_cancelados['DATA'], dayfirst=True, errors='coerce').dt.date
 base_df['VENDEDOR'] = fechamento_sem_cancelados['VENDEDOR']
 
+# Converter CODPRODUTO para inteiro
 base_df['CODPRODUTO'] = fechamento_sem_cancelados['CODPRODUTO'].astype(str)
-base_df['CODPRODUTO'] = base_df['CODPRODUTO'].str.strip()
-base_df['CODPRODUTO'] = base_df['CODPRODUTO'].str.replace(r'\.0$', '', regex=True)
-base_df['CODPRODUTO'] = base_df['CODPRODUTO'].str.replace(r'^0+', '', regex=True)
-base_df['CODPRODUTO'] = base_df['CODPRODUTO'].str.strip()
+base_df = converter_codproduto_para_int(base_df)
 
 base_df['GRUPO PRODUTO'] = fechamento_sem_cancelados['GRUPO PRODUTO']
 base_df['DESCRICAO'] = fechamento_sem_cancelados['DESCRICAO']
@@ -208,7 +238,7 @@ base_df['Preço Venda'] = fechamento_sem_cancelados['PRECO VENDA'] if 'PRECO VEN
 
 base_df['PK'] = base_df['OS'].astype(str) + "_" + base_df['NF-E'].astype(str) + "_" + base_df['CODPRODUTO'].astype(str)
 base_df['Quinzena'] = base_df['PK'].map(lambda x: quinzena_dict.get(x, ""))
-base_df['GRUPO'] = base_df['GRUPO'].fillna('VAREJO')
+base_df['GRUPO'] = base_df['GRUPO'].fillna('VAREJO')    
 
 # Funções de cálculo
 def calcular_qtde_ajustada(row):
