@@ -3,6 +3,7 @@ import numpy as np
 from datetime import date
 import warnings
 import json
+import openpyxl.styles
 
 warnings.filterwarnings('ignore')
 
@@ -700,12 +701,12 @@ colunas_ordenadas = [
 colunas_existentes = [col for col in colunas_ordenadas if col in base_df.columns]
 base_df = base_df[colunas_existentes]
 base_df = base_df.fillna("")
-
 # Salvar arquivos
 print("💾 Salvando arquivos...")
 output_path = f"C:\\Users\\win11\\Downloads\\Margem_{data_nome_arquivo}.xlsx"
 
 with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+    # Salvar cada planilha com formatação de fonte
     base_df.to_excel(writer, sheet_name='base (3,5%)', index=False)
     ofertas_vog.to_excel(writer, sheet_name='OFERTAS_VOG', index=False)
     custos_produtos.to_excel(writer, sheet_name='PRECOS', index=False)
@@ -715,8 +716,33 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
     
     if not lourencini.empty:
         lourencini.to_excel(writer, sheet_name='LOURENCINI', index=False)
+    
+    # Aplicar formatação de fonte tamanho 10 para todas as planilhas
+    workbook = writer.book
+    font_size = 10
+    
+    for sheet_name in writer.sheets:
+        worksheet = writer.sheets[sheet_name]
+        
+        # Aplicar fonte tamanho 10 para todas as células
+        for row in worksheet.iter_rows():
+            for cell in row:
+                cell.font = openpyxl.styles.Font(size=font_size)
+        
+        # Ajustar automaticamente o tamanho das colunas
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)  # Limite máximo de 50
+            worksheet.column_dimensions[column_letter].width = adjusted_width
 
-# Salvar JSON
+# Salvar JSON (código original mantido)
 def default_serializer(obj):
     if isinstance(obj, (np.integer, int)):
         return int(obj)
