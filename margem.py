@@ -11,15 +11,61 @@ warnings.filterwarnings('ignore')
 print("🚀 INICIANDO PROCESSAMENTO DE MARGEM...")
 
 # Data fixa para o nome do arquivo
-data_nome_arquivo = "050825"
+data_nome_arquivo = "testes"
+
+# Função para carregar CSV com múltiplas tentativas de codificação
+def carregar_csv_com_codificacao(caminho, sep=';', decimal=',', thousands='.', skiprows=None):
+    codificacoes = ['latin-1', 'iso-8859-1', 'cp1252', 'utf-8']
+    
+    for encoding in codificacoes:
+        try:
+            if skiprows:
+                df = pd.read_csv(caminho, sep=sep, encoding=encoding, decimal=decimal, thousands=thousands, skiprows=skiprows)
+            else:
+                df = pd.read_csv(caminho, sep=sep, encoding=encoding, decimal=decimal, thousands=thousands)
+            print(f"✅ Arquivo carregado com {encoding}")
+            return df
+        except UnicodeDecodeError as e:
+            print(f"❌ Falha com {encoding}: {e}")
+            continue
+        except Exception as e:
+            print(f"❌ Erro com {encoding}: {e}")
+            continue
+    
+    # Última tentativa com tratamento de erros
+    try:
+        print("Tentando com tratamento de erros...")
+        if skiprows:
+            df = pd.read_csv(caminho, sep=sep, encoding='utf-8', decimal=decimal, thousands=thousands, 
+                           skiprows=skiprows, errors='replace')
+        else:
+            df = pd.read_csv(caminho, sep=sep, encoding='utf-8', decimal=decimal, thousands=thousands, 
+                           errors='replace')
+        print("✅ Arquivo carregado com substituição de caracteres")
+        return df
+    except Exception as e:
+        print(f"❌ Erro crítico ao carregar {caminho}: {e}")
+        return pd.DataFrame()
 
 # Carregar arquivos
 print("📁 Carregando arquivos...")
-fechamento = pd.read_csv(r"C:\Users\win11\Downloads\fechamento.csv", sep=';', encoding='utf-8', decimal=',', thousands='.')
-cancelados = pd.read_csv(r"C:\Users\win11\Downloads\cancelados.csv", sep=';', encoding='utf-8', decimal=',', thousands='.', skiprows=2)
-devolucoes = pd.read_csv(r"C:\Users\win11\Downloads\movimentação.csv", sep=';', encoding='utf-8', decimal=',', thousands='.')
-custos_produtos = pd.read_excel(r"C:\Users\win11\Downloads\Custos de produtos - Julho.xlsx", sheet_name='Base', dtype=str)
 
+# Carregar fechamento
+fechamento = carregar_csv_com_codificacao(r"C:\Users\win11\Downloads\fechamento_processado.csv")
+
+# Carregar cancelados (com skiprows=2)
+cancelados = carregar_csv_com_codificacao(r"S:\hor\arquivos\gustavo\can.csv", skiprows=2)
+
+# Carregar devoluções (arquivo onde vamos buscar o PESO para QTDE AJUSTADA)
+devolucoes = carregar_csv_com_codificacao(r"S:\hor\excel\20251001.csv")
+
+# Carregar custos_produtos (Excel)
+try:
+    custos_produtos = pd.read_excel(r"C:\Users\win11\Downloads\Custos de produtos - Outubro.xlsx", sheet_name='Base', dtype=str)
+    print("✅ Custos produtos carregado com sucesso")
+except Exception as e:
+    print(f"❌ Erro ao carregar custos produtos: {e}")
+    custos_produtos = pd.DataFrame()
 
 # Carregar LOURENCINI
 try:
@@ -62,6 +108,38 @@ try:
 except Exception as e:
     lourencini = pd.DataFrame()
     print(f"⚠️ Erro ao carregar LOURENCINI: {e}")
+
+# Carregar OFERTAS_VOG
+try:
+    # Tentar carregar ambas as abas
+    ofertas_off = pd.read_excel(r"C:\Users\win11\Downloads\OFERTAS_VOG.xlsx", sheet_name='OFF_VOG')
+    ofertas_cb = pd.read_excel(r"C:\Users\win11\Downloads\OFERTAS_VOG.xlsx", sheet_name='OFF_VOG_CB')
+    
+    # Combinar as duas abas em um único dataframe
+    ofertas_vog = pd.concat([ofertas_off, ofertas_cb], ignore_index=True)
+    print("✅ OFERTAS_VOG carregado com sucesso (ambas as abas)")
+except Exception as e:
+    print(f"⚠️ Erro ao carregar OFERTAS_VOG: {e}")
+    ofertas_vog = pd.DataFrame()
+
+# Verificar se os DataFrames essenciais foram carregados
+if fechamento.empty:
+    print("❌ CRÍTICO: DataFrame 'fechamento' está vazio! Verifique o arquivo.")
+    exit()
+
+if cancelados.empty:
+    print("⚠️ AVISO: DataFrame 'cancelados' está vazio!")
+
+if devolucoes.empty:
+    print("⚠️ AVISO: DataFrame 'devolucoes' está vazio!")
+
+print("✅ TODOS OS ARQUIVOS CARREGADOS COM SUCESSO!")
+print(f"📊 Tamanho do fechamento: {len(fechamento)} linhas")
+print(f"📊 Tamanho do cancelados: {len(cancelados)} linhas")
+print(f"📊 Tamanho do devoluções: {len(devolucoes)} linhas")
+
+# Resto do código original continua aqui...
+# [INSIRA AQUI O RESTO DO SEU CÓDIGO ORIGINAL A PARTIR DA LINHA ONDE COMEÇA "Renomear colunas"]
 
 # Renomear colunas
 rename_mapping = {
@@ -108,29 +186,25 @@ def converter_codproduto_para_int(df, coluna='CODPRODUTO'):
 
 custos_produtos = converter_codproduto_para_int(custos_produtos)
 
-# Carregar OFERTAS_VOG
-try:
-    ofertas_vog = pd.read_excel(r"C:\Users\win11\Downloads\OFERTAS_VOG.xlsx")
-    print("✅ OFERTAS_VOG carregado com sucesso")
-except Exception as e:
-    ofertas_vog = pd.DataFrame()
-    print(f"⚠️ Erro ao carregar OFERTAS_VOG: {e}")
-
 # Processar dados
 print("🔄 Processando dados...")
-notas_canceladas = cancelados['NUMERO'].tolist()
+notas_canceladas = cancelados['NUMERO'].tolist() if not cancelados.empty else []
 
-devolucoes_filtro = devolucoes[
-    (devolucoes['DESCRICAO'] == "DEV VENDA C/ FIN S/ EST") | 
-    (devolucoes['HISTORICO'] == "68")
-]
-devolucoes_var = devolucoes_filtro[['ROMANEIO', 'NOTA FISCAL']].values.tolist()
+if not devolucoes.empty:
+    devolucoes_filtro = devolucoes[
+        (devolucoes['DESCRICAO'] == "DEV VENDA C/ FIN S/ EST") | 
+        (devolucoes['HISTORICO'] == "68")
+    ]
+    devolucoes_var = devolucoes_filtro[['ROMANEIO', 'NOTA FISCAL']].values.tolist()
 
-vendas_filtro = devolucoes[
-    (devolucoes['DESCRICAO'] == "VENDA") | 
-    (devolucoes['HISTORICO'] == "51")
-]
-vendas_var = vendas_filtro[['ROMANEIO', 'NOTA FISCAL']].values.tolist()
+    vendas_filtro = devolucoes[
+        (devolucoes['DESCRICAO'] == "VENDA") | 
+        (devolucoes['HISTORICO'] == "51")
+    ]
+    vendas_var = vendas_filtro[['ROMANEIO', 'NOTA FISCAL']].values.tolist()
+else:
+    devolucoes_var = []
+    vendas_var = []
 
 fechamento_sem_cancelados = fechamento[~fechamento['NF-E'].isin(notas_canceladas)].copy()
 
@@ -219,6 +293,51 @@ for _, row in fechamento.iterrows():
     if pd.notna(row['NF-E']):
         fechamento_nf_dict[int(row['NF-E'])] = row['Mov'] if 'Mov' in fechamento.columns and pd.notna(row['Mov']) else ""
 
+# CRIAR DICIONÁRIO PARA QTDE AJUSTADA A PARTIR DO ARQUIVO DE DEVOLUÇÕES
+print("📋 Criando dicionário para QTDE AJUSTADA...")
+qtde_ajustada_dict = {}
+
+if not devolucoes.empty:
+    # Verificar se as colunas necessárias existem
+    colunas_necessarias = ['NOTA FISCAL', 'ROMANEIO', 'PRODUTO', 'PESO']
+    colunas_existentes = [col for col in colunas_necessarias if col in devolucoes.columns]
+    
+    if len(colunas_existentes) == 4:
+        # Processar cada linha do arquivo de devoluções
+        for _, row in devolucoes.iterrows():
+            try:
+                nota_fiscal = row['NOTA FISCAL']
+                romaneio = row['ROMANEIO']
+                produto = row['PRODUTO']
+                peso = row['PESO']
+                
+                # Converter para tipos consistentes (todos string para comparação)
+                if pd.notna(nota_fiscal) and pd.notna(romaneio) and pd.notna(produto) and pd.notna(peso):
+                    nota_fiscal_str = str(nota_fiscal).strip()
+                    romaneio_str = str(romaneio).strip()
+                    produto_str = str(produto).strip()
+                    
+                    # Criar chave única para o dicionário
+                    chave = (nota_fiscal_str, romaneio_str, produto_str)
+                    
+                    # Converter peso para numérico
+                    try:
+                        peso_float = float(str(peso).replace(',', '.'))
+                        qtde_ajustada_dict[chave] = peso_float
+                    except (ValueError, TypeError):
+                        continue
+                        
+            except Exception as e:
+                continue
+        
+        print(f"✅ Dicionário QTDE AJUSTADA criado com {len(qtde_ajustada_dict)} entradas")
+    else:
+        print(f"⚠️ Colunas necessárias não encontradas no arquivo de devoluções. Colunas existentes: {list(devolucoes.columns)}")
+        qtde_ajustada_dict = {}
+else:
+    print("⚠️ Arquivo de devoluções vazio, dicionário QTDE AJUSTADA não criado")
+    qtde_ajustada_dict = {}
+
 # Criar base_df
 print("📊 Criando base principal...")
 base_df = pd.DataFrame()
@@ -257,13 +376,35 @@ base_df['PK'] = base_df['OS'].astype(str) + "_" + base_df['NF-E'].astype(str) + 
 base_df['Quinzena'] = base_df['PK'].map(lambda x: quinzena_dict.get(x, ""))
 base_df['GRUPO'] = base_df['GRUPO'].fillna('VAREJO')    
 
-# Funções de cálculo
+# FUNÇÃO MODIFICADA PARA CALCULAR QTDE AJUSTADA (COM CONDIÇÃO PARA VALORES NEGATIVOS)
 def calcular_qtde_ajustada(row):
     try:
+        # Buscar no dicionário usando NF-E, OS e CODPRODUTO
+        nf_e = str(row['NF-E']).strip() if pd.notna(row['NF-E']) else ""
+        os_val = str(row['OS']).strip() if pd.notna(row['OS']) else ""
+        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ""
+        
+        # Criar chave para busca no dicionário
+        chave = (nf_e, os_val, codproduto)
+        
+        # Buscar no dicionário
+        if chave in qtde_ajustada_dict:
+            peso_encontrado = qtde_ajustada_dict[chave]
+            
+            # VERIFICAR SE A COLUNA CF É "DEV" - SE FOR, TORNAR O VALOR NEGATIVO
+            cf_valor = str(row['CF']).strip() if pd.notna(row['CF']) else ""
+            if cf_valor == "DEV":
+                peso_encontrado = -abs(peso_encontrado)  # Garante que seja negativo
+                print(f"✅ Encontrado PESO para NF-E {nf_e}, OS {os_val}, CODPRODUTO {codproduto}: {peso_encontrado} (NEGATIVO - CF=DEV)")
+            else:
+                print(f"✅ Encontrado PESO para NF-E {nf_e}, OS {os_val}, CODPRODUTO {codproduto}: {peso_encontrado} (POSITIVO)")
+            
+            return peso_encontrado
+        
+        # Se não encontrou no dicionário, usar a lógica original como fallback
         if row['QTDE REAL'] <= 0:
             return row['QTDE REAL']
         
-        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else None
         data = row['DATA']
         
         if codproduto is None or data is None:
@@ -273,10 +414,19 @@ def calcular_qtde_ajustada(row):
         qtd = custo_info.get('QTD', 1)
         
         if qtd > 1:
-            return row['QTDE'] * qtd
+            resultado = row['QTDE'] * qtd
         else:
-            return row['QTDE REAL']
-    except:
+            resultado = row['QTDE REAL']
+            
+        # Aplicar mesma condição de negativo para o fallback
+        cf_valor = str(row['CF']).strip() if pd.notna(row['CF']) else ""
+        if cf_valor == "DEV" and resultado > 0:
+            resultado = -resultado
+            
+        return resultado
+            
+    except Exception as e:
+        print(f"❌ Erro ao calcular QTDE AJUSTADA para linha: {e}")
         return row['QTDE REAL']
 
 def calcular_qtde_real2(row):
@@ -345,12 +495,15 @@ def buscar_producao(row):
         return 0
 
 # Aplicar funções
+print("🔄 Calculando QTDE AJUSTADA...")
 base_df['QTDE AJUSTADA'] = base_df.apply(calcular_qtde_ajustada, axis=1)
 base_df['QTDE REAL2'] = base_df.apply(calcular_qtde_real2, axis=1)
 base_df['CUSTO'] = base_df.apply(buscar_custo, axis=1)
+base_df['Custo total'] = base_df['CUSTO'] * base_df['QTDE AJUSTADA']
 base_df['Frete'] = base_df.apply(buscar_frete, axis=1)
 base_df['Produção'] = base_df.apply(buscar_producao, axis=1)
 
+# [O RESTO DO CÓDIGO PERMANECE EXATAMENTE IGUAL...]
 # Escritório
 if 'ESCRITORIO' in fechamento_sem_cancelados.columns:
     base_df['Escritório'] = fechamento_sem_cancelados['ESCRITORIO'].fillna(0) / 100
@@ -516,16 +669,97 @@ def aplicar_regras_comissao_fixa(row):
 
 def aplicar_ofertas_comissao(row):
     try:
-        return 0.03  # Default simplificado
-    except:
-        return 0.03
-
-def aplicar_regras_padrao_grupo(row):
-    try:
+        # Verificar se temos os dataframes de ofertas carregados
+        if ofertas_vog.empty:
+            return 0.03  # Default se não tiver ofertas carregadas
+        
+        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ''
+        data_venda = row['DATA']
+        preco_venda = row['Preço Venda']
+        
+        if not codproduto or codproduto == 'nan' or pd.isna(data_venda) or pd.isna(preco_venda) or preco_venda == 0:
+            return 0.03
+        
+        # Converter data_venda para Timestamp se necessário
+        if isinstance(data_venda, date):
+            data_venda = pd.Timestamp(data_venda)
+        
+        # Converter codproduto para inteiro para comparação
+        try:
+            codproduto_int = int(float(codproduto))
+        except (ValueError, TypeError):
+            return 0.03
+        
+        # ESTRATÉGIA 1: Buscar na aba OFF_VOG (com DT_REF_OFF)
+        if 'COD' in ofertas_vog.columns and 'DT_REF_OFF' in ofertas_vog.columns:
+            # Filtrar ofertas para o código do produto
+            ofertas_cod = ofertas_vog[ofertas_vog['COD'] == codproduto_int].copy()
+            
+            if not ofertas_cod.empty:
+                
+                # Converter e ordenar datas
+                ofertas_cod['DT_REF_OFF'] = pd.to_datetime(ofertas_cod['DT_REF_OFF'], errors='coerce')
+                ofertas_cod = ofertas_cod.dropna(subset=['DT_REF_OFF'])
+                ofertas_cod = ofertas_cod.sort_values('DT_REF_OFF', ascending=False)
+                
+                # Encontrar oferta mais próxima (mais recente anterior ou igual à data da venda)
+                ofertas_validas = ofertas_cod[ofertas_cod['DT_REF_OFF'] <= data_venda]
+                
+                if not ofertas_validas.empty:
+                    oferta_mais_recente = ofertas_validas.iloc[0]  # Já está ordenado
+                    
+                    # Verificar colunas de preço disponíveis - ORDEM DE PRIORIDADE: 3% -> 1%
+                    if '3%' in oferta_mais_recente and pd.notna(oferta_mais_recente['3%']):
+                        preco_oferta = oferta_mais_recente['3%']
+                        if preco_venda >= preco_oferta:
+                            return 0.03
+                    
+                    # Se não atendeu ao 3%, verificar 1%
+                    if '1%' in oferta_mais_recente and pd.notna(oferta_mais_recente['1%']):
+                        preco_oferta = oferta_mais_recente['1%']
+                        if preco_venda >= preco_oferta:
+                            return 0.01
+        
+        # ESTRATÉGIA 2: Buscar na aba OFF_VOG_CB (com DT_REF_OFF_CB)
+        if 'CD_PROD' in ofertas_vog.columns and 'DT_REF_OFF_CB' in ofertas_vog.columns:
+            # Filtrar ofertas para o código do produto
+            ofertas_cod = ofertas_vog[ofertas_vog['CD_PROD'] == codproduto_int].copy()
+            
+            if not ofertas_cod.empty:
+                
+                # Converter e ordenar datas
+                ofertas_cod['DT_REF_OFF_CB'] = pd.to_datetime(ofertas_cod['DT_REF_OFF_CB'], errors='coerce')
+                ofertas_cod = ofertas_cod.dropna(subset=['DT_REF_OFF_CB'])
+                ofertas_cod = ofertas_cod.sort_values('DT_REF_OFF_CB', ascending=False)
+                
+                # Encontrar oferta mais próxima
+                ofertas_validas = ofertas_cod[ofertas_cod['DT_REF_OFF_CB'] <= data_venda]
+                
+                if not ofertas_validas.empty:
+                    oferta_mais_recente = ofertas_validas.iloc[0]
+                    
+                    # Verificar colunas de preço disponíveis - ORDEM DE PRIORIDADE: 2% -> 1%
+                    if '2%' in oferta_mais_recente and pd.notna(oferta_mais_recente['2%']):
+                        preco_oferta = oferta_mais_recente['2%']
+                        if preco_venda >= preco_oferta:
+                            return 0.02
+                    
+                    # Se não atendeu ao 2%, verificar 1%
+                    if '1%' in oferta_mais_recente and pd.notna(oferta_mais_recente['1%']):
+                        preco_oferta = oferta_mais_recente['1%']
+                        if preco_venda >= preco_oferta:
+                            return 0.01
+        
+        # Se não encontrou em nenhuma tabela de ofertas, aplicar regra padrão por grupo
+        grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
+        comissao_padrao = 0.02 if grupo == "CORTES BOVINOS" else 0.03
+        return comissao_padrao
+        
+    except Exception as e:
+        print(f"❌ Erro ao aplicar ofertas comissão para código {codproduto}: {e}")
+        # Fallback para regra padrão por grupo
         grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
         return 0.02 if grupo == "CORTES BOVINOS" else 0.03
-    except:
-        return 0.03
 
 def calcular_p_com_com_regras_fixas(row):
     try:
@@ -683,7 +917,22 @@ base_df['Custo divergente'] = base_df.apply(
     lambda row: "CORRETO" if (row['QTDE'] > 0 and row['CUSTO EM SISTEMA'] == row['CUSTO']) else "DIVERGENTE", axis=1
 )
 
-base_df['Lucro / Prej.'] = base_df['Fat Liquido'] - base_df['CUST + IMP']
+base_df['Lucro / Prej.'] = base_df.apply(
+    lambda row: row['Fat. Bruto'] - (
+        (row['QTDE AJUSTADA'] * row['Custo real']) + 
+        row['Val Pis'] + 
+        row['VLRCOFINS'] + 
+        row['IRPJ'] + 
+        row['CSLL'] + 
+        row['VL ICMS'] + 
+        row['Desc. Valor'] + 
+        (row['QTDE AJUSTADA'] * row['Frete']) + 
+        (row['QTDE AJUSTADA'] * row['Produção']) + 
+        (row['P. Com'] * row['Preço Venda'] * row['QTDE AJUSTADA']) + 
+        row['Aniversário']
+    ) - (row['Fat. Bruto'] * row['Escritório']), 
+    axis=1
+)
 
 base_df['Margem'] = base_df.apply(
     lambda row: (row['Lucro / Prej.'] / row['Fat Liquido']) if row['Fat Liquido'] != 0 else 0, axis=1
@@ -704,7 +953,7 @@ base_df['DESCRIÇÃO_2'] = base_df.apply(buscar_descricao_2, axis=1)
 colunas_ordenadas = [
     'CF', 'RAZAO', 'FANTASIA', 'GRUPO', 'OS', 'NF-E', 'CF_NF', 'DATA', 'VENDEDOR',
     'CODPRODUTO', 'GRUPO PRODUTO', 'DESCRICAO', 'QTDE', 'QTDE REAL', 'CUSTO EM SISTEMA',
-    'QTDE AJUSTADA', 'QTDE REAL2', 'CUSTO', 'Custo real', 'Frete', 'Produção',
+    'QTDE AJUSTADA', 'QTDE REAL2', 'CUSTO', 'Custo real', 'Custo total', 'Frete', 'Produção',  # "Custo total" ADICIONADA AQUI
     'Escritório', 'Comissão Kg', 'P. Com', 'Aniversário', 'Val Pis', 'VLRCOFINS',
     'IRPJ', 'CSLL', 'VL ICMS', 'Aliq Icms', 'Desc Perc', 'Desc. Valor', 'Preço Venda',
     'Fat Liquido', 'Fat. Bruto', 'Lucro / Prej.', 'Margem', 'Quinzena', 'Comissão Real',
@@ -751,7 +1000,7 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
     
     # Definir colunas para formatação monetária (formato Real brasileiro)
     colunas_monetarias = [
-        'CUSTO', 'Custo real', 'Frete', 'Produção', 'Comissão Kg', 'Aniversário',
+        'CUSTO', 'Custo real', 'Custo total', 'Frete', 'Produção', 'Comissão Kg', 'Aniversário',  # "Custo total" ADICIONADA AQUI
         'VL ICMS', 'Desc. Valor', 'Preço Venda', 'Fat Liquido', 'Fat. Bruto',
         'Lucro / Prej.', 'Comissão Real', 'Coleta Esc', 'Frete Real',
         'Armazenagem', 'Comissão por Regra', 'CUST + IMP'
