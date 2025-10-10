@@ -138,9 +138,6 @@ print(f"📊 Tamanho do fechamento: {len(fechamento)} linhas")
 print(f"📊 Tamanho do cancelados: {len(cancelados)} linhas")
 print(f"📊 Tamanho do devoluções: {len(devolucoes)} linhas")
 
-# Resto do código original continua aqui...
-# [INSIRA AQUI O RESTO DO SEU CÓDIGO ORIGINAL A PARTIR DA LINHA ONDE COMEÇA "Renomear colunas"]
-
 # Renomear colunas
 rename_mapping = {
     'PRODUTO': 'CODPRODUTO', 'DATA': 'DATA', 'PCS': 'QTDE', 'KGS': 'PESO_KGS', 
@@ -917,6 +914,48 @@ base_df['Custo divergente'] = base_df.apply(
     lambda row: "CORRETO" if (row['QTDE'] > 0 and row['CUSTO EM SISTEMA'] == row['CUSTO']) else "DIVERGENTE", axis=1
 )
 
+# =============================================================================
+# MODIFICAÇÃO PRINCIPAL: TRATAMENTO PARA CF = "DEV"
+# =============================================================================
+
+print("🔄 Aplicando regras para CF = 'DEV'...")
+
+# Função para aplicar as regras específicas para CF = "DEV"
+def aplicar_regras_dev(row):
+    if str(row['CF']).strip() == "DEV":
+        # Colunas que devem ser ZERO para CF = "DEV"
+        colunas_zero = [
+            'QTDE', 'CUSTO EM SISTEMA', 'CUSTO', 'Custo real', 'Frete', 
+            'Produção', 'Escritório', 'Aniversário', 'Desc. Valor', 'Margem'
+        ]
+        
+        # Colunas que devem ser NEGATIVAS para CF = "DEV"
+        colunas_negativas = [
+            'P. Com', 'VL ICMS', 'Preço Venda', 'Fat Liquido', 
+            'Fat. Bruto', 'Lucro / Prej.'
+        ]
+        
+        # Aplicar regras
+        for coluna in colunas_zero:
+            if coluna in row.index:
+                row[coluna] = 0
+        
+        for coluna in colunas_negativas:
+            if coluna in row.index and row[coluna] != 0:
+                # Se o valor já for negativo, mantém; se for positivo, torna negativo
+                if row[coluna] > 0:
+                    row[coluna] = -row[coluna]
+    
+    return row
+
+# Aplicar as regras para todas as linhas
+base_df = base_df.apply(aplicar_regras_dev, axis=1)
+
+# =============================================================================
+# FIM DA MODIFICAÇÃO PRINCIPAL
+# =============================================================================
+
+# Recalcular Lucro / Prej. e Margem após aplicar as regras
 base_df['Lucro / Prej.'] = base_df.apply(
     lambda row: row['Fat. Bruto'] - (
         (row['QTDE AJUSTADA'] * row['Custo real']) + 
@@ -936,6 +975,11 @@ base_df['Lucro / Prej.'] = base_df.apply(
 
 base_df['Margem'] = base_df.apply(
     lambda row: (row['Lucro / Prej.'] / row['Fat Liquido']) if row['Fat Liquido'] != 0 else 0, axis=1
+)
+
+# Aplicar novamente as regras para garantir que Margem seja 0 para CF = "DEV"
+base_df['Margem'] = base_df.apply(
+    lambda row: 0 if str(row['CF']).strip() == "DEV" else row['Margem'], axis=1
 )
 
 base_df['INCL.'] = ""
@@ -966,7 +1010,6 @@ colunas_ordenadas = [
 colunas_existentes = [col for col in colunas_ordenadas if col in base_df.columns]
 base_df = base_df[colunas_existentes]
 base_df = base_df.fillna("")
-
 
 # Salvar arquivos
 print("💾 Salvando arquivos...")
