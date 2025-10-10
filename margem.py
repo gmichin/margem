@@ -570,9 +570,9 @@ def calcular_comissao_kg(row):
         
         # Regras específicas por vendedor
         regras_vendedores = {
-            "LUIZ FERNANDO VOLTERO BARBOSA": {"812": {"CHAMA": 3, "PARANA": 3, "REDE PLUS": 2}},
-            "FELIPE RAMALHO GOMES": {"700": {"PEDREIRA": 2, "BERGAMINI": 0.5}},
-            "VALDENIR VOLTERO": {"812": {"RICOY": 1}, "937": {"RICOY": 0.5}, "1624": {"RICOY": 0.5}},
+            "LUIZ FERNANDO VOLTERO BARBOSA": {"812": {"REDE CHAMA": 3, "REDE PARANA": 3, "REDE PLUS": 2}},
+            "FELIPE RAMALHO GOMES": {"700": {"REDE PEDREIRA": 2, "VAREJO BERGAMINI": 0.5}},
+            "VALDENIR VOLTERO": {"812": {"REDE RICOY": 1}, "937": {"REDE RICOY": 0.5}, "1624": {"REDE RICOY": 0.5}},
             "ROSE VOLTERO": {"812": 2},
             "VERA LUCIA MUNIZ": {"812": 2},
             "PAMELA FERREIRA VIEIRA": {"812": 2}
@@ -586,7 +586,7 @@ def calcular_comissao_kg(row):
                 else:
                     return regra
         
-        if row['GRUPO'] != "LOURENCINI" or lourencini.empty:
+        if row['GRUPO'] != "REDE LOURENCINI" or lourencini.empty:
             return (row['Preço Venda'] * row['P. Com'])
         
         # Lógica LOURENCINI
@@ -635,18 +635,108 @@ def calcular_comissao_kg(row):
 base_df['P. Com'] = 0
 base_df['Comissão Kg'] = base_df.apply(calcular_comissao_kg, axis=1)
 
-# Regras de comissão fixa
 def criar_regras_comissao_fixa():
-    return {
+    regras_completas = {
         'geral': {
             0.00: {
-                'grupos': ['AKKI', 'ANDORINHA', 'BERGAMINI', 'DA PRACA', 'DOVALE', 'MERCADAO', 'REIMBERG', 'SEMAR', 'TRIMAIS', 'VOVO ZUZU', 'BENGALA', 'OURINHOS'],
-                'razoes': ['COMERCIO DE CARNES E ROTISSERIE DUTRA LTDA', 'DISTRIBUIDORA E COMERCIO UAI SP LTDA', "GARFETO'S FORNECIMENTO DE REFEICOES LTDA", "LATICINIO SOBERANO LTDA VILA ALPINA", "SAO LORENZO ALIMENTOS LTDA", "QUE DELICIA MENDES COMERCIO DE ALIMENTOS", "MARIANA OLIVEIRA MAZZEI", "LS SANTOS COMERCIO DE ALIMENTOS LTDA"]
+                'grupos': [
+                    'REDE AKKI', 'VAREJO ANDORINHA', 'VAREJO BERGAMINI', 'REDE DA PRACA', 'REDE DOVALE',
+                    'REDE MERCADAO', 'REDE REIMBERG', 'REDE SEMAR', 'REDE TRIMAIS', 'REDE VOVO ZUZU',
+                    'REDE BENGALA', 'VAREJO OURINHOS'
+                ],
+                'razoes': [
+                    'COMERCIO DE CARNES E ROTISSERIE DUTRA LTDA',
+                    'DISTRIBUIDORA E COMERCIO UAI SP LTDA',
+                    "GARFETO'S FORNECIMENTO DE REFEICOES LTDA", 
+                    "LATICINIO SOBERANO LTDA VILA ALPINA",
+                    "SAO LORENZO ALIMENTOS LTDA",
+                    "QUE DELICIA MENDES COMERCIO DE ALIMENTOS",
+                    "MARIANA OLIVEIRA MAZZEI",
+                    "LS SANTOS COMERCIO DE ALIMENTOS LTDA"
+                ]
             },
-            0.03: {'grupos': ['CALVO', 'CHAMA', 'ESTRELA AZUL', 'TENDA', 'HIGAS']},
-            0.01: {'razoes': ['SHOPPING FARTURA VALINHOS COMERCIO LTDA']}
+            0.03: {
+                'grupos': ['VAREJO CALVO', 'REDE CHAMA', 'REDE ESTRELA AZUL', 'REDE TENDA', 'REDE HIGAS']
+            },
+            0.01: {
+                'razoes': ['SHOPPING FARTURA VALINHOS COMERCIO LTDA']
+            }
+        },
+        'grupos_especificos': {
+            'REDE STYLLUS': {
+                0.00: {
+                    'grupos_produto': ['TORRESMO', 'SALAME UAI', 'EMPANADOS']
+                }
+            },
+            'REDE ROSSI': {
+                0.03: [1288, 1289, 1287, 937, 1698, 1701, 1587, 1700, 1586, 1699],
+                0.01: [1265, 1266, 812, 1115, 798, 1211],
+                0.00: {
+                    'grupos_produto': [
+                        'EMBUTIDOS', 'EMBUTIDOS NOBRE', 'EMBUTIDOS SADIA', 
+                        'EMBUTIDOS PERDIGAO', 'EMBUTIDOS AURORA', 'EMBUTIDOS SEARA', 
+                        'SALAME UAI'
+                    ],
+                    'codigos': [1139]
+                },
+                0.02: {
+                    'grupos_produto': ['MIUDOS BOVINOS', 'SUINOS', 'SALGADOS SUINOS A GRANEL'],
+                    'codigos': [700]
+                }
+            },
+            'REDE PLUS': {
+                0.03: {
+                    'grupos_produto': ['TEMPERADOS'],
+                    'codigos': [812]
+                }
+            },
+            'REDE CENCOSUD': {
+                0.01: {
+                    'grupos_produto': ['SALAME UAI']
+                },
+                0.03: {
+                    'todos_exceto': ['SALGADOS SUINOS EMBALADOS']
+                }
+            },
+            'REDE ROLDAO': {
+                0.02: {
+                    'grupos_produto': [
+                        'CONGELADOS', 'CORTES BOVINOS', 'CORTES DE FRANGO', 'EMBUTIDOS', 
+                        'EMBUTIDOS AURORA', 'EMBUTIDOS NOBRE', 'EMBUTIDOS PERDIGÃO', 
+                        'EMBUTIDOS SADIA', 'EMBUTIDOS SEARA', 'EMPANADOS', 
+                        'KITS FEIJOADA', 'MIUDOS BOVINOS', 'SUINOS', 'TEMPERADOS'
+                    ]
+                },
+                0.00: {
+                    'todos_exceto': [
+                        'CONGELADOS', 'CORTES BOVINOS', 'CORTES DE FRANGO', 'EMBUTIDOS', 
+                        'EMBUTIDOS AURORA', 'EMBUTIDOS NOBRE', 'EMBUTIDOS PERDIGÃO', 
+                        'EMBUTIDOS SADIA', 'EMBUTIDOS SEARA', 'EMPANADOS', 
+                        'KITS FEIJOADA', 'MIUDOS BOVINOS', 'SUINOS', 'TEMPERADOS'
+                    ]
+                }
+            }
+        },
+        'razoes_especificas': {
+            'PAES E DOCES LEKA LTDA': {
+                0.03: [1893, 1886]
+            },
+            'PAES E DOCES MICHELLI LTDA': {
+                0.03: [1893, 1886]
+            },
+            'WANDERLEY GOMES MORENO': {
+                0.03: [1893, 1886]
+            }
         }
     }
+    
+    # Debug: verificar estrutura
+    print("✅ Estrutura das regras carregada:")
+    print(f"   - Geral: {list(regras_completas['geral'].keys())}")
+    print(f"   - Grupos específicos: {list(regras_completas['grupos_especificos'].keys())}")
+    print(f"   - Razões específicas: {list(regras_completas['razoes_especificas'].keys())}")
+    
+    return regras_completas
 
 def aplicar_regras_comissao_fixa(row):
     try:
@@ -654,16 +744,51 @@ def aplicar_regras_comissao_fixa(row):
         grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
         razao = str(row['RAZAO']).strip() if pd.notna(row['RAZAO']) else ''
         fantasia = str(row['FANTASIA']).strip() if pd.notna(row['FANTASIA']) else ''
+        grupo_produto = str(row['GRUPO PRODUTO']).strip() if pd.notna(row['GRUPO PRODUTO']) else ''
+        codproduto = int(row['CODPRODUTO']) if pd.notna(row['CODPRODUTO']) else None
         
+        # 1. REGRAS GERAIS
         for comissao, regra in regras['geral'].items():
+            # Verificar por grupos
             if 'grupos' in regra and grupo in regra['grupos']:
                 return comissao
+            # Verificar por razões sociais/fantasia
             if 'razoes' in regra and (razao in regra['razoes'] or fantasia in regra['razoes']):
                 return comissao
+        
+        # 2. REGRAS POR GRUPO ESPECÍFICO
+        if grupo in regras['grupos_especificos']:
+            regras_grupo = regras['grupos_especificos'][grupo]
+            
+            # [TODO: Adicionar lógica específica para cada grupo conforme suas regras]
+            # Exemplo para REDE ROSSI:
+            if grupo == 'REDE ROSSI':
+                if codproduto in [1288, 1289, 1287, 937, 1698, 1701, 1587, 1700, 1586, 1699]:
+                    return 0.03
+                elif codproduto in [1265, 1266, 812, 1115, 798, 1211]:
+                    return 0.01
+                elif grupo_produto in ['EMBUTIDOS', 'EMBUTIDOS NOBRE', 'EMBUTIDOS SADIA']:
+                    return 0.00
+                elif grupo_produto in ['MIUDOS BOVINOS', 'SUINOS', 'SALGADOS SUINOS A GRANEL']:
+                    return 0.02
+            
+            # Adicione lógica similar para outros grupos...
+        
+        # 3. REGRAS POR RAZÃO SOCIAL ESPECÍFICA
+        for razao_especifica, regras_razao in regras['razoes_especificas'].items():
+            if razao == razao_especifica or fantasia == razao_especifica:
+                for comissao, codigos in regras_razao.items():
+                    if codproduto in codigos:
+                        return comissao
+        
+        # Se não encontrou nenhuma regra específica
         return None
-    except:
+        
+    except Exception as e:
+        print(f"❌ Erro ao aplicar regras de comissão fixa: {e}")
         return None
-
+    
+    
 def aplicar_ofertas_comissao(row):
     try:
         # Verificar se temos os dataframes de ofertas carregados
@@ -687,34 +812,64 @@ def aplicar_ofertas_comissao(row):
         except (ValueError, TypeError):
             return 0.03
         
+        # Dicionário para traduzir meses abreviados
+        meses_pt_br = {
+            'jan': '01', 'fev': '02', 'mar': '03', 'abr': '04', 'mai': '05', 'jun': '06',
+            'jul': '07', 'ago': '08', 'set': '09', 'out': '10', 'nov': '11', 'dez': '12'
+        }
+        
+        def converter_data_oferta(data_str):
+            """
+            Converte data no formato '13/set' para datetime
+            """
+            try:
+                if not isinstance(data_str, str):
+                    return data_str
+                    
+                partes = data_str.split('/')
+                if len(partes) == 2:
+                    dia = partes[0].strip()
+                    mes_abrev = partes[1].strip().lower()[:3]
+                    
+                    if mes_abrev in meses_pt_br:
+                        mes_num = meses_pt_br[mes_abrev]
+                        ano_atual = date.today().year
+                        data_formatada = f"{dia}/{mes_num}/{ano_atual}"
+                        return pd.to_datetime(data_formatada, dayfirst=True, errors='coerce')
+                
+                return pd.to_datetime(data_str, dayfirst=True, errors='coerce')
+            except Exception:
+                return pd.to_datetime(data_str, dayfirst=True, errors='coerce')
+        
         # ESTRATÉGIA 1: Buscar na aba OFF_VOG (com DT_REF_OFF)
         if 'COD' in ofertas_vog.columns and 'DT_REF_OFF' in ofertas_vog.columns:
             # Filtrar ofertas para o código do produto
             ofertas_cod = ofertas_vog[ofertas_vog['COD'] == codproduto_int].copy()
             
             if not ofertas_cod.empty:
+                # Converter datas no formato "13/set" para datetime
+                ofertas_cod = ofertas_cod.copy()
+                ofertas_cod['DT_REF_OFF_CONVERTED'] = ofertas_cod['DT_REF_OFF'].apply(converter_data_oferta)
                 
-                # Converter e ordenar datas
-                ofertas_cod['DT_REF_OFF'] = pd.to_datetime(ofertas_cod['DT_REF_OFF'], errors='coerce')
-                ofertas_cod = ofertas_cod.dropna(subset=['DT_REF_OFF'])
-                ofertas_cod = ofertas_cod.sort_values('DT_REF_OFF', ascending=False)
+                ofertas_cod = ofertas_cod.dropna(subset=['DT_REF_OFF_CONVERTED'])
+                ofertas_cod = ofertas_cod.sort_values('DT_REF_OFF_CONVERTED', ascending=False)
                 
                 # Encontrar oferta mais próxima (mais recente anterior ou igual à data da venda)
-                ofertas_validas = ofertas_cod[ofertas_cod['DT_REF_OFF'] <= data_venda]
+                ofertas_validas = ofertas_cod[ofertas_cod['DT_REF_OFF_CONVERTED'] <= data_venda]
                 
                 if not ofertas_validas.empty:
                     oferta_mais_recente = ofertas_validas.iloc[0]  # Já está ordenado
                     
-                    # Verificar colunas de preço disponíveis - ORDEM DE PRIORIDADE: 3% -> 1%
+                    # VERIFICAR OFERTA 3% - REGRA SIMPLIFICADA
                     if '3%' in oferta_mais_recente and pd.notna(oferta_mais_recente['3%']):
-                        preco_oferta = oferta_mais_recente['3%']
-                        if preco_venda >= preco_oferta:
+                        preco_oferta_3pct = oferta_mais_recente['3%']
+                        
+                        if preco_venda >= preco_oferta_3pct:
+                            print(f"✅ OFERTA 3% APLICADA: Cód {codproduto}, Preço Venda {preco_venda} >= Oferta 3% {preco_oferta_3pct}")
                             return 0.03
-                    
-                    # Se não atendeu ao 3%, verificar 1%
-                    if '1%' in oferta_mais_recente and pd.notna(oferta_mais_recente['1%']):
-                        preco_oferta = oferta_mais_recente['1%']
-                        if preco_venda >= preco_oferta:
+                        else:
+                            # QUALQUER VALOR ABAIXO DA OFERTA 3% GANHA 1%
+                            print(f"✅ OFERTA 1% APLICADA: Cód {codproduto}, Preço Venda {preco_venda} < Oferta 3% {preco_oferta_3pct}")
                             return 0.01
         
         # ESTRATÉGIA 2: Buscar na aba OFF_VOG_CB (com DT_REF_OFF_CB)
@@ -723,33 +878,35 @@ def aplicar_ofertas_comissao(row):
             ofertas_cod = ofertas_vog[ofertas_vog['CD_PROD'] == codproduto_int].copy()
             
             if not ofertas_cod.empty:
+                # Converter datas no formato "13/set" para datetime
+                ofertas_cod = ofertas_cod.copy()
+                ofertas_cod['DT_REF_OFF_CB_CONVERTED'] = ofertas_cod['DT_REF_OFF_CB'].apply(converter_data_oferta)
                 
-                # Converter e ordenar datas
-                ofertas_cod['DT_REF_OFF_CB'] = pd.to_datetime(ofertas_cod['DT_REF_OFF_CB'], errors='coerce')
-                ofertas_cod = ofertas_cod.dropna(subset=['DT_REF_OFF_CB'])
-                ofertas_cod = ofertas_cod.sort_values('DT_REF_OFF_CB', ascending=False)
+                ofertas_cod = ofertas_cod.dropna(subset=['DT_REF_OFF_CB_CONVERTED'])
+                ofertas_cod = ofertas_cod.sort_values('DT_REF_OFF_CB_CONVERTED', ascending=False)
                 
                 # Encontrar oferta mais próxima
-                ofertas_validas = ofertas_cod[ofertas_cod['DT_REF_OFF_CB'] <= data_venda]
+                ofertas_validas = ofertas_cod[ofertas_cod['DT_REF_OFF_CB_CONVERTED'] <= data_venda]
                 
                 if not ofertas_validas.empty:
                     oferta_mais_recente = ofertas_validas.iloc[0]
                     
-                    # Verificar colunas de preço disponíveis - ORDEM DE PRIORIDADE: 2% -> 1%
+                    # VERIFICAR OFERTA 2% - REGRA SIMPLIFICADA
                     if '2%' in oferta_mais_recente and pd.notna(oferta_mais_recente['2%']):
-                        preco_oferta = oferta_mais_recente['2%']
-                        if preco_venda >= preco_oferta:
+                        preco_oferta_2pct = oferta_mais_recente['2%']
+                        
+                        if preco_venda >= preco_oferta_2pct:
+                            print(f"✅ OFERTA 2% APLICADA: Cód {codproduto}, Preço Venda {preco_venda} >= Oferta 2% {preco_oferta_2pct}")
                             return 0.02
-                    
-                    # Se não atendeu ao 2%, verificar 1%
-                    if '1%' in oferta_mais_recente and pd.notna(oferta_mais_recente['1%']):
-                        preco_oferta = oferta_mais_recente['1%']
-                        if preco_venda >= preco_oferta:
+                        else:
+                            # QUALQUER VALOR ABAIXO DA OFERTA 2% GANHA 1%
+                            print(f"✅ OFERTA 1% APLICADA: Cód {codproduto}, Preço Venda {preco_venda} < Oferta 2% {preco_oferta_2pct}")
                             return 0.01
         
         # Se não encontrou em nenhuma tabela de ofertas, aplicar regra padrão por grupo
         grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
         comissao_padrao = 0.02 if grupo == "CORTES BOVINOS" else 0.03
+        print(f"ℹ️  SEM OFERTA ENCONTRADA: Cód {codproduto}, Data {data_venda.date()}, Comissão Padrão {comissao_padrao}")
         return comissao_padrao
         
     except Exception as e:
@@ -757,24 +914,36 @@ def aplicar_ofertas_comissao(row):
         # Fallback para regra padrão por grupo
         grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
         return 0.02 if grupo == "CORTES BOVINOS" else 0.03
-
+    
+    
 def calcular_p_com_com_regras_fixas(row):
     try:
+        # 1. PRIMEIRO: Tentar usar Comissão Kg (se for positiva)
         comissao_kg = row['Comissão Kg']
         preco_venda = row['Preço Venda']
         
         if comissao_kg > 0 and preco_venda > 0:
-            return comissao_kg / preco_venda
-        elif comissao_kg <= 0:
-            comissao_regras_fixas = aplicar_regras_comissao_fixa(row)
-            if comissao_regras_fixas is not None:
-                return comissao_regras_fixas
-            else:
-                return aplicar_ofertas_comissao(row)
-        else:
-            return 0
-    except:
-        return aplicar_ofertas_comissao(row)
+            p_com_calculado = comissao_kg / preco_venda
+            print(f"✅ COMISSÃO KG APLICADA: Cód {row['CODPRODUTO']}, P.Com = {p_com_calculado}")
+            return p_com_calculado
+        
+        # 2. SEGUNDO: Se Comissão Kg não aplicou, tentar regras fixas
+        comissao_regras_fixas = aplicar_regras_comissao_fixa(row)
+        if comissao_regras_fixas is not None:
+            print(f"✅ REGRAS FIXAS APLICADAS: Cód {row['CODPRODUTO']}, P.Com = {comissao_regras_fixas}")
+            return comissao_regras_fixas
+        
+        # 3. TERCEIRO: Se nada acima aplicou, usar ofertas como fallback
+        comissao_ofertas = aplicar_ofertas_comissao(row)
+        print(f"✅ OFERTAS APLICADAS (FALLBACK): Cód {row['CODPRODUTO']}, P.Com = {comissao_ofertas}")
+        return comissao_ofertas
+        
+    except Exception as e:
+        print(f"❌ Erro ao calcular P.Com para código {row['CODPRODUTO']}: {e}")
+        # Fallback final
+        grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
+        return 0.02 if grupo == "CORTES BOVINOS" else 0.03
+    
 
 base_df['P. Com'] = base_df.apply(calcular_p_com_com_regras_fixas, axis=1)
 
@@ -788,8 +957,8 @@ base_df['Coleta Esc'] = base_df['Fat. Bruto'] * base_df['Escritório']
 base_df['Frete Real'] = base_df['QTDE REAL2'] * base_df['Frete']
 
 base_df['comissão'] = base_df.apply(
-    lambda row: row['Comissão Kg'] / row['Preço Venda'] if row['Preço Venda'] > 0
-    else -row['Comissão Kg'] / row['Preço Venda'] if row['Preço Venda'] < 0
+    lambda row: (row['P. Com']*row['Preço Venda']) / row['Preço Venda'] if row['Preço Venda'] > 0
+    else -(row['P. Com']*row['Preço Venda']) / row['Preço Venda'] if row['Preço Venda'] < 0
     else 0, axis=1
 )
 
