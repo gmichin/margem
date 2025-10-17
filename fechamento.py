@@ -27,7 +27,7 @@ def detectar_codificacao(arquivo_path):
         return 'latin-1'  # Fallback para latin-1
 
 # Carregar os arquivos
-fechamento_path = r"S:\hor\excel\fechamento-20251001-20251010.csv"
+fechamento_path = r"S:\hor\excel\fechamento-20251001-20251016.csv"
 movimentacao_path = r"S:\hor\excel\20251001.csv"
 
 # Detectar codificação dos arquivos

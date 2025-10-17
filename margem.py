@@ -663,9 +663,6 @@ def calcular_comissao_kg(row):
     except Exception:
         return (row['Preço Venda'] * row['P. Com'])
 
-base_df['P. Com'] = 0
-base_df['Comissão Kg'] = base_df.apply(calcular_comissao_kg, axis=1)
-
 def criar_regras_comissao_fixa():
     regras_completas = {
         'geral': {
@@ -920,9 +917,188 @@ def calcular_p_com_com_regras_fixas(row):
     except Exception:
         grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
         return 0.02 if grupo == "CORTES BOVINOS" else 0.03
-    
+    # PRIMEIRO: Calcular P.Com para todos os registros (exceto LOURENCINI e regras_vendedores)
+def calcular_p_com_para_nao_especificos(row):
+    """Calcula P.Com apenas para registros que NÃO são LOURENCINI ou regras_vendedores"""
+    try:
+        # Verificar se é LOURENCINI
+        if row['GRUPO'] == "REDE LOURENCINI" and not lourencini.empty:
+            return None  # Será calculado depois
+        
+        # Verificar se está nas regras de vendedores específicos
+        vendedor = str(row['VENDEDOR']).strip() if pd.notna(row['VENDEDOR']) else ''
+        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ''
+        grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
+        
+        regras_vendedores = {
+            "LUIZ FERNANDO VOLTERO BARBOSA": {"812": {"REDE CHAMA": 3, "REDE PARANA": 3, "REDE PLUS": 2}},
+            "FELIPE RAMALHO GOMES": {"700": {"REDE PEDREIRA": 2, "VAREJO BERGAMINI": 0.5}},
+            "VALDENIR VOLTERO": {"812": {"REDE RICOY": 1}, "937": {"REDE RICOY": 0.5}, "1624": {"REDE RICOY": 0.5}},
+            "ROSE VOLTERO": {"812": 2},
+            "VERA LUCIA MUNIZ": {"812": 2},
+            "PAMELA FERREIRA VIEIRA": {"812": 2}
+        }
+        
+        if vendedor in regras_vendedores:
+            if codproduto in regras_vendedores[vendedor]:
+                return None  # Será calculado depois
+        
+        # Se não é LOURENCINI nem regras_vendedores, aplicar regras normais
+        comissao_regras_fixas = aplicar_regras_comissao_fixa(row)
+        if comissao_regras_fixas is not None:
+            return comissao_regras_fixas
+        
+        comissao_ofertas = aplicar_ofertas_comissao(row)
+        return comissao_ofertas
+        
+    except Exception:
+        grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
+        return 0.02 if grupo == "CORTES BOVINOS" else 0.03
 
-base_df['P. Com'] = base_df.apply(calcular_p_com_com_regras_fixas, axis=1)
+# SEGUNDO: Calcular Comissão Kg para LOURENCINI e regras_vendedores
+def calcular_comissao_kg_especificos(row):
+    """Calcula Comissão Kg apenas para LOURENCINI e regras_vendedores"""
+    try:
+        if row['CF'] == "DEV":
+            comissao = -(row['Preço Venda'] * row['P. Com'])
+            return comissao
+        
+        vendedor = str(row['VENDEDOR']).strip() if pd.notna(row['VENDEDOR']) else ''
+        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ''
+        grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
+        
+        # 1. VERIFICAR REGRAS DE VENDEDORES ESPECÍFICOS
+        regras_vendedores = {
+            "LUIZ FERNANDO VOLTERO BARBOSA": {"812": {"REDE CHAMA": 3, "REDE PARANA": 3, "REDE PLUS": 2}},
+            "FELIPE RAMALHO GOMES": {"700": {"REDE PEDREIRA": 2, "VAREJO BERGAMINI": 0.5}},
+            "VALDENIR VOLTERO": {"812": {"REDE RICOY": 1}, "937": {"REDE RICOY": 0.5}, "1624": {"REDE RICOY": 0.5}},
+            "ROSE VOLTERO": {"812": 2},
+            "VERA LUCIA MUNIZ": {"812": 2},
+            "PAMELA FERREIRA VIEIRA": {"812": 2}
+        }
+        
+        if vendedor in regras_vendedores:
+            if codproduto in regras_vendedores[vendedor]:
+                regra = regras_vendedores[vendedor][codproduto]
+                if isinstance(regra, dict):
+                    comissao_especifica = regra.get(grupo, None)
+                    if comissao_especifica is not None:
+                        return comissao_especifica
+                else:
+                    return regra
+        
+        # 2. VERIFICAR REDE LOURENCINI
+        if row['GRUPO'] == "REDE LOURENCINI" and not lourencini.empty:
+            data_venda = row['DATA']
+            preco_venda = row['Preço Venda']
+            codproduto = str(row['CODPRODUTO']).strip()
+            
+            if not codproduto or codproduto == 'nan' or pd.isna(data_venda) or pd.isna(preco_venda) or preco_venda == 0:
+                return (row['Preço Venda'] * row['P. Com'])
+            
+            lourencini_filtrado = lourencini[lourencini['COD'] == codproduto]
+            if lourencini_filtrado.empty:
+                return (row['Preço Venda'] * row['P. Com'])
+            
+            data_venda_dt = pd.Timestamp(data_venda)
+            lourencini_row = None
+            
+            if 'Data_fim' in lourencini_filtrado.columns:
+                lourencini_periodo = lourencini_filtrado[
+                    (lourencini_filtrado['Data'] <= data_venda_dt) & 
+                    (lourencini_filtrado['Data_fim'] >= data_venda_dt)
+                ]
+                if not lourencini_periodo.empty:
+                    lourencini_row = lourencini_periodo.iloc[0]
+            
+            if lourencini_row is None:
+                lourencini_anteriores = lourencini_filtrado[lourencini_filtrado['Data'] <= data_venda_dt]
+                if not lourencini_anteriores.empty:
+                    lourencini_anteriores = lourencini_anteriores.sort_values('Data', ascending=False)
+                    lourencini_row = lourencini_anteriores.iloc[0]
+                else:
+                    lourencini_filtrado = lourencini_filtrado.sort_values('Data', ascending=True)
+                    lourencini_row = lourencini_filtrado.iloc[0]
+            
+            colunas_comissao = ['0,2', '0,3', '0,5', '0,7', '1']
+            for coluna in colunas_comissao:
+                valor_na_tabela = lourencini_row[coluna]
+                if pd.notna(valor_na_tabela) and abs(preco_venda - valor_na_tabela) < 0.01:
+                    return float(coluna.replace(',', '.'))
+        
+        # Se chegou aqui, não era LOURENCINI nem regras_vendedores específicos
+        # Usa a regra padrão: Preço Venda × P.Com
+        return (row['Preço Venda'] * row['P. Com'])
+        
+    except Exception:
+        return (row['Preço Venda'] * row['P. Com'])
+
+# TERCEIRO: Calcular P.Com para LOURENCINI e regras_vendedores (derivado da Comissão Kg)
+def calcular_p_com_para_especificos(row):
+    """Calcula P.Com para LOURENCINI e regras_vendedores baseado na Comissão Kg"""
+    try:
+        comissao_kg = row['Comissão Kg']
+        preco_venda = row['Preço Venda']
+        
+        if comissao_kg > 0 and preco_venda > 0:
+            p_com_calculado = comissao_kg / preco_venda
+            return p_com_calculado
+        else:
+            return row['P. Com']  # Mantém o valor atual se não for possível calcular
+        
+    except Exception:
+        return row['P. Com']  # Mantém o valor atual em caso de erro
+    
+# APLICAR NA ORDEM CORRETA:
+
+print("🔄 Calculando P.Com para registros não específicos...")
+# 1. Primeiro calcula P.Com para todos os registros NÃO específicos
+base_df['P. Com'] = base_df.apply(calcular_p_com_para_nao_especificos, axis=1)
+
+print("🔄 Calculando Comissão Kg para todos os registros...")
+# 2. Depois calcula Comissão Kg para TODOS os registros
+base_df['Comissão Kg'] = base_df.apply(calcular_comissao_kg_especificos, axis=1)
+
+print("🔄 Ajustando P.Com para registros específicos...")
+# 3. Finalmente, ajusta P.Com para LOURENCINI e regras_vendedores
+def ajustar_p_com_final(row):
+    """Ajusta P.Com baseado na Comissão Kg para registros específicos"""
+    try:
+        # Verificar se é LOURENCINI ou regras_vendedores
+        vendedor = str(row['VENDEDOR']).strip() if pd.notna(row['VENDEDOR']) else ''
+        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ''
+        
+        regras_vendedores = {
+            "LUIZ FERNANDO VOLTERO BARBOSA": {"812": {"REDE CHAMA": 3, "REDE PARANA": 3, "REDE PLUS": 2}},
+            "FELIPE RAMALHO GOMES": {"700": {"REDE PEDREIRA": 2, "VAREJO BERGAMINI": 0.5}},
+            "VALDENIR VOLTERO": {"812": {"REDE RICOY": 1}, "937": {"REDE RICOY": 0.5}, "1624": {"REDE RICOY": 0.5}},
+            "ROSE VOLTERO": {"812": 2},
+            "VERA LUCIA MUNIZ": {"812": 2},
+            "PAMELA FERREIRA VIEIRA": {"812": 2}
+        }
+        
+        is_regra_vendedor = (
+            vendedor in regras_vendedores and 
+            codproduto in regras_vendedores[vendedor]
+        )
+        
+        is_lourencini = (row['GRUPO'] == "REDE LOURENCINI" and not lourencini.empty)
+        
+        # Se for específico, recalcula P.Com baseado na Comissão Kg
+        if is_regra_vendedor or is_lourencini:
+            comissao_kg = row['Comissão Kg']
+            preco_venda = row['Preço Venda']
+            
+            if comissao_kg > 0 and preco_venda > 0:
+                return comissao_kg / preco_venda
+        
+        # Se não for específico, mantém o P.Com já calculado
+        return row['P. Com']
+        
+    except Exception:
+        return row['P. Com']
+
+base_df['P. Com'] = base_df.apply(ajustar_p_com_final, axis=1)
 
 # Colunas restantes
 base_df['Comissão Real'] = base_df.apply(
