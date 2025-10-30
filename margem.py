@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from datetime import date
+from datetime import date, datetime
 import warnings
 import json
 import openpyxl.styles
@@ -13,7 +13,105 @@ print("🚀 INICIANDO PROCESSAMENTO DE MARGEM...")
 # Data fixa para o nome do arquivo
 data_nome_arquivo = "testes"
 
-# Função para carregar CSV com múltiplas tentativas de codificação
+REGRA_COMISSAO = {
+    'geral': {
+        0.00: { 
+            'grupos': [
+                'REDE AKKI', 'VAREJO ANDORINHA', 'VAREJO BERGAMINI', 'REDE DA PRACA', 
+                'REDE DOVALE', 'REDE MERCADAO', 'REDE REIMBERG', 'REDE SEMAR', 
+                'REDE TRIMAIS', 'REDE VOVO ZUZU', 'REDE BENGALA', 'VAREJO OURINHOS'
+            ],
+            'razoes': [
+                'COMERCIO DE CARNES E ROTISSERIE DUTRA LT',
+                'COMERCIO DE CARNES E ROTISSERIE DUTRA LTDA',
+                'DISTRIBUIDORA E COMERCIO UAI SP LTDA',
+                "GARFETO'S FORNECIMENTO DE REFEICOES LTDA", 
+                "LATICINIO SOBERANO LTDA VILA ALPINA",
+                "SAO LORENZO ALIMENTOS LTDA",
+                "QUE DELICIA MENDES COMERCIO DE ALIMENTOS",
+                "MARIANA OLIVEIRA MAZZEI",
+                "LS SANTOS COMERCIO DE ALIMENTOS LTDA"
+            ]
+        },
+        0.03: {
+            'grupos': ['VAREJO CALVO', 'REDE CHAMA', 'REDE ESTRELA AZUL', 'REDE TENDA', 'REDE HIGAS']
+        },
+        0.01: { 
+            'razoes': ['SHOPPING FARTURA VALINHOS COMERCIO LTDA']
+        }
+    },
+    'grupos_especificos': {
+        'REDE STYLLUS': {
+            0.00: {
+                'grupos_produto': ['TORRESMO', 'SALAME UAI', 'EMPANADOS']
+            }
+        },
+        'REDE ROSSI': {
+            0.03: {
+                'codigos': [1288, 1289, 1287, 937, 1698, 1701, 1587, 1700, 1586, 1699]
+            },
+            0.01: {
+                'codigos': [1265, 1266, 812, 1115, 798, 1211]
+            },
+            0.00: {
+                'grupos_produto': [
+                    'EMBUTIDOS', 'EMBUTIDOS NOBRE', 'EMBUTIDOS SADIA', 
+                    'EMBUTIDOS PERDIGAO', 'EMBUTIDOS AURORA', 'EMBUTIDOS SEARA', 
+                    'SALAME UAI'
+                ],
+                'codigos': [1139]
+            },
+            0.02: {
+                'grupos_produto': ['MIUDOS BOVINOS', 'SUINOS', 'SALGADOS SUINOS A GRANEL'],
+                'codigos': [700]
+            }
+        },
+        'REDE PLUS': {
+            0.03: {
+                'grupos_produto': ['TEMPERADOS'],
+                'codigos': [812]
+            }
+        },
+        'REDE CENCOSUD': {
+            0.01: {
+                'grupos_produto': ['SALAME UAI']
+            },
+            0.03: {
+                'todos_exceto': ['SALGADOS SUINOS EMBALADOS']
+            }
+        },
+        'REDE ROLDAO': {
+            0.02: {
+                'grupos_produto': [
+                    'CONGELADOS', 'CORTES BOVINOS', 'CORTES DE FRANGO', 'EMBUTIDOS', 
+                    'EMBUTIDOS AURORA', 'EMBUTIDOS NOBRE', 'EMBUTIDOS PERDIGÃO', 
+                    'EMBUTIDOS SADIA', 'EMBUTIDOS SEARA', 'EMPANADOS', 
+                    'KITS FEIJOADA', 'MIUDOS BOVINOS', 'SUINOS', 'TEMPERADOS'
+                ]
+            },
+            0.00: {
+                'todos_exceto': [
+                    'CONGELADOS', 'CORTES BOVINOS', 'CORTES DE FRANGO', 'EMBUTIDOS', 
+                    'EMBUTIDOS AURORA', 'EMBUTIDOS NOBRE', 'EMBUTIDOS PERDIGÃO', 
+                    'EMBUTIDOS SADIA', 'EMBUTIDOS SEARA', 'EMPANADOS', 
+                    'KITS FEIJOADA', 'MIUDOS BOVINOS', 'SUINOS', 'TEMPERADOS'
+                ]
+            }
+        }
+    },
+    'razoes_especificas': {
+        'PAES E DOCES LEKA LTDA': {
+            0.03: [1893, 1886]
+        },
+        'PAES E DOCES MICHELLI LTDA': {
+            0.03: [1893, 1886]
+        },
+        'WANDERLEY GOMES MORENO': {
+            0.03: [1893, 1886]
+        }
+    }
+}
+
 def carregar_csv_com_codificacao(caminho, sep=';', decimal=',', thousands='.', skiprows=None):
     codificacoes = ['latin-1', 'iso-8859-1', 'cp1252', 'utf-8']
     
@@ -23,7 +121,6 @@ def carregar_csv_com_codificacao(caminho, sep=';', decimal=',', thousands='.', s
                 df = pd.read_csv(caminho, sep=sep, encoding=encoding, decimal=decimal, thousands=thousands, skiprows=skiprows)
             else:
                 df = pd.read_csv(caminho, sep=sep, encoding=encoding, decimal=decimal, thousands=thousands)
-            print(f"✅ Arquivo carregado com {encoding}")
             return df
         except UnicodeDecodeError:
             continue
@@ -38,14 +135,281 @@ def carregar_csv_com_codificacao(caminho, sep=';', decimal=',', thousands='.', s
         else:
             df = pd.read_csv(caminho, sep=sep, encoding='utf-8', decimal=decimal, thousands=thousands, 
                            errors='replace')
-        print("✅ Arquivo carregado com substituição de caracteres")
         return df
     except Exception:
         return pd.DataFrame()
 
-# Carregar arquivos
-print("📁 Carregando arquivos...")
+def converter_codproduto_para_int(df, coluna='CODPRODUTO'):
+    df[coluna] = df[coluna].astype(str).str.strip()
+    df[coluna] = df[coluna].str.replace(r'\.0$', '', regex=True)
+    df[coluna] = df[coluna].str.replace(r'^0+', '', regex=True)
+    df[coluna] = df[coluna].str.strip()
+    
+    def converter_para_int(valor):
+        try:
+            if pd.isna(valor) or valor == '' or valor == 'nan':
+                return np.nan
+            return int(float(valor))
+        except (ValueError, TypeError):
+            return np.nan
+    
+    df[coluna] = df[coluna].apply(converter_para_int)
+    return df
 
+def aplicar_regras_comissao(row):
+    """
+    Aplica as regras de comissão para linhas que não possuem Comissão Kg
+    Retorna o valor da comissão ou None se não se aplicar
+    """
+    try:
+        grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
+        razao = str(row['RAZAO']).strip() if pd.notna(row['RAZAO']) else ''
+        fantasia = str(row['FANTASIA']).strip() if pd.notna(row['FANTASIA']) else ''
+        grupo_produto = str(row['GRUPO PRODUTO']).strip() if pd.notna(row['GRUPO PRODUTO']) else ''
+        codproduto = int(row['CODPRODUTO']) if pd.notna(row['CODPRODUTO']) else None
+        
+        # 1. REGRAS GERAIS
+        for comissao, criterios in REGRA_COMISSAO['geral'].items():
+            # Verificar grupos
+            if 'grupos' in criterios and grupo in criterios['grupos']:
+                return comissao
+            
+            # Verificar razões sociais
+            if 'razoes' in criterios and (razao in criterios['razoes'] or fantasia in criterios['razoes']):
+                return comissao
+        
+        # 2. REGRAS POR GRUPO ESPECÍFICO
+        if grupo in REGRA_COMISSAO['grupos_especificos']:
+            regras_grupo = REGRA_COMISSAO['grupos_especificos'][grupo]
+            
+            for comissao, criterios in regras_grupo.items():
+                # Verificar códigos específicos
+                if 'codigos' in criterios and codproduto in criterios['codigos']:
+                    return comissao
+                
+                # Verificar grupos de produto
+                if 'grupos_produto' in criterios and grupo_produto in criterios['grupos_produto']:
+                    return comissao
+                
+                # Verificar "todos_exceto" (CENCOSUD e ROLDAO)
+                if 'todos_exceto' in criterios:
+                    if grupo_produto not in criterios['todos_exceto']:
+                        return comissao
+        
+        # 3. REGRAS POR RAZÃO SOCIAL ESPECÍFICA
+        for razao_especifica, regras in REGRA_COMISSAO['razoes_especificas'].items():
+            if razao == razao_especifica or fantasia == razao_especifica:
+                for comissao, codigos in regras.items():
+                    if codproduto in codigos:
+                        return comissao
+        
+        return None
+        
+    except Exception as e:
+        print(f"Erro ao aplicar regras comissão: {e}")
+        return None
+    
+    
+def converter_data_oferta(data_str, data_referencia):
+    """
+    Converte datas no formato '01/ago' para datetime usando o ano da data de referência
+    """
+    try:
+        if pd.isna(data_str):
+            return pd.NaT
+        
+        # Se já for datetime, retorna como está
+        if isinstance(data_str, (pd.Timestamp, datetime)):
+            return data_str
+        
+        data_str = str(data_str).strip()
+        
+        # Mapeamento de meses abreviados
+        meses_pt_br = {
+            'jan': '01', 'fev': '02', 'mar': '03', 'abr': '04', 
+            'mai': '05', 'jun': '06', 'jul': '07', 'ago': '08', 
+            'set': '09', 'out': '10', 'nov': '11', 'dez': '12'
+        }
+        
+        # Tentar diferentes formatos
+        formatos_tentativos = [
+            '%d/%b', '%d/%B', '%d/%m', '%d/%m/%Y', 
+            '%Y-%m-%d', '%d-%m-%Y', '%d.%m.%Y'
+        ]
+        
+        for formato in formatos_tentativos:
+            try:
+                if formato in ['%d/%b', '%d/%B']:
+                    # Para formatos com mês abreviado (01/set)
+                    partes = data_str.split('/')
+                    if len(partes) == 2:
+                        dia = partes[0].strip()
+                        mes_abrev = partes[1].strip().lower()[:3]
+                        
+                        if mes_abrev in meses_pt_br:
+                            mes_num = meses_pt_br[mes_abrev]
+                            ano_atual = data_referencia.year  # Usar o ano da venda
+                            data_completa = f"{dia}/{mes_num}/{ano_atual}"
+                            return pd.to_datetime(data_completa, dayfirst=True, errors='coerce')
+                else:
+                    # Para outros formatos
+                    data_convertida = pd.to_datetime(data_str, format=formato, errors='coerce')
+                    if not pd.isna(data_convertida):
+                        return data_convertida
+            except:
+                continue
+        
+        # Última tentativa com parser genérico
+        return pd.to_datetime(data_str, dayfirst=True, errors='coerce')
+        
+    except Exception as e:
+        print(f"Erro ao converter data oferta '{data_str}': {e}")
+        return pd.NaT
+
+def buscar_oferta_vog(row, ofertas_off, ofertas_cb):
+    """
+    Busca ofertas conforme a regra:
+    - CORTES BOVINOS: sempre procura em OFF_VOG_CB
+    - Todo resto: sempre procura em OFF_VOG
+    """
+    try:
+        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ''
+        data_venda = row['DATA']
+        preco_venda = row['Preço Venda']
+        grupo_produto = str(row['GRUPO PRODUTO']).strip() if pd.notna(row['GRUPO PRODUTO']) else ''
+        
+        if not codproduto or codproduto == 'nan' or pd.isna(data_venda) or pd.isna(preco_venda) or preco_venda == 0:
+            return None
+        
+        # Converter data da venda para Timestamp se necessário
+        if isinstance(data_venda, date):
+            data_venda = pd.Timestamp(data_venda)
+        
+        try:
+            codproduto_int = int(float(codproduto))
+        except (ValueError, TypeError):
+            return None
+        
+        # REGRA: CORTES BOVINOS sempre procura em OFF_VOG_CB
+        if grupo_produto == "CORTES BOVINOS":
+            comissao = buscar_oferta_cb(row, ofertas_cb, codproduto_int, data_venda, preco_venda)
+            # Se não encontrou oferta específica em CB, aplica 2% padrão para CORTES BOVINOS
+            if comissao is None:
+                return 0.02
+            return comissao
+        else:
+            # TODO O RESTO sempre procura em OFF_VOG
+            comissao = buscar_oferta_off(row, ofertas_off, codproduto_int, data_venda, preco_venda, grupo_produto)
+            # Se não encontrou oferta específica em OFF_VOG, aplica 3% padrão
+            if comissao is None:
+                return 0.03
+            return comissao
+        
+    except Exception as e:
+        print(f"❌ ERRO ao buscar oferta para produto {codproduto}: {e}")
+        return None
+    
+def buscar_oferta_off(row, ofertas_off, codproduto_int, data_venda, preco_venda, grupo_produto):
+    """Busca ofertas na aba OFF_VOG para produtos que NÃO são CORTES BOVINOS"""
+    if ofertas_off.empty or 'COD' not in ofertas_off.columns or 'DT_REF_OFF' not in ofertas_off.columns:
+        print(f"❌ OFF_VOG não disponível para produto {codproduto_int}")
+        return None  # Retorna None para aplicar 3% padrão
+    
+    ofertas_cod = ofertas_off[ofertas_off['COD'] == codproduto_int].copy()
+    
+    if ofertas_cod.empty:
+        print(f"❌ Produto {codproduto_int} não encontrado em OFF_VOG")
+        return None  # Retorna None para aplicar 3% padrão
+    
+    ofertas_cod = ofertas_cod.copy()
+    ofertas_cod['DT_REF_OFF_CONVERTED'] = ofertas_cod['DT_REF_OFF'].apply(
+        lambda x: converter_data_oferta(x, data_venda)
+    )
+    
+    ofertas_cod = ofertas_cod.dropna(subset=['DT_REF_OFF_CONVERTED'])
+    
+    if ofertas_cod.empty:
+        print(f"❌ Nenhuma data válida para produto {codproduto_int} em OFF_VOG")
+        return None
+    
+    ofertas_cod = ofertas_cod.sort_values('DT_REF_OFF_CONVERTED', ascending=False)
+    
+    # Buscar data exata ou anterior mais próxima
+    ofertas_validas = ofertas_cod[ofertas_cod['DT_REF_OFF_CONVERTED'] <= data_venda]
+    
+    if not ofertas_validas.empty:
+        oferta_mais_recente = ofertas_validas.iloc[0]
+        
+        # Buscar coluna 3%
+        coluna_3pct = None
+        for col in oferta_mais_recente.index:
+            if '3%' in str(col) or '3.00%' in str(col):
+                coluna_3pct = col
+                break
+        
+        if coluna_3pct and pd.notna(oferta_mais_recente[coluna_3pct]) and oferta_mais_recente[coluna_3pct] != 0:
+            preco_oferta_3pct = oferta_mais_recente[coluna_3pct]
+            
+            # Lógica VOG: 3% se >=, 1% se <
+            if preco_venda >= preco_oferta_3pct:
+                return 0.03
+            else:
+                return 0.01
+    
+    # Se não encontrou oferta válida em OFF_VOG
+    print(f"❌ Nenhuma oferta válida em OFF_VOG para produto {codproduto_int}")
+    return None
+
+def buscar_oferta_cb(row, ofertas_cb, codproduto_int, data_venda, preco_venda):
+    """Busca ofertas na aba OFF_VOG_CB para produtos CORTES BOVINOS"""
+    if ofertas_cb.empty or 'CD_PROD' not in ofertas_cb.columns or 'DT_REF' not in ofertas_cb.columns:
+        print(f"❌ OFF_VOG_CB não disponível para CORTES BOVINOS {codproduto_int}")
+        return None  # Retorna None para aplicar 2% padrão
+    
+    ofertas_cod = ofertas_cb[ofertas_cb['CD_PROD'] == codproduto_int].copy()
+    
+    if ofertas_cod.empty:
+        print(f"❌ CORTES BOVINOS {codproduto_int} não encontrado em OFF_VOG_CB")
+        return None  # Retorna None para aplicar 2% padrão
+    
+    ofertas_cod = ofertas_cod.copy()
+    ofertas_cod['DT_REF_CONVERTED'] = ofertas_cod['DT_REF'].apply(
+        lambda x: converter_data_oferta(x, data_venda)
+    )
+    
+    ofertas_cod = ofertas_cod.dropna(subset=['DT_REF_CONVERTED'])
+    
+    if ofertas_cod.empty:
+        print(f"❌ Nenhuma data válida para CORTES BOVINOS {codproduto_int} em OFF_VOG_CB")
+        return None
+    
+    ofertas_cod = ofertas_cod.sort_values('DT_REF_CONVERTED', ascending=False)
+    
+    # Buscar data exata ou anterior mais próxima
+    ofertas_validas = ofertas_cod[ofertas_cod['DT_REF_CONVERTED'] <= data_venda]
+    
+    if not ofertas_validas.empty:
+        oferta_mais_recente = ofertas_validas.iloc[0]
+        
+        # Buscar coluna 2% - em OFF_VOG_CB usamos a coluna "2%"
+        coluna_2pct = '2%' if '2%' in oferta_mais_recente.index else None
+        
+        if coluna_2pct and pd.notna(oferta_mais_recente[coluna_2pct]) and oferta_mais_recente[coluna_2pct] != 0:
+            preco_oferta_2pct = oferta_mais_recente[coluna_2pct]
+            
+            # Lógica CB: 2% se >=, 1% se <
+            if preco_venda >= preco_oferta_2pct:
+                return 0.02
+            else:
+                return 0.01
+        else:
+            # Se não encontrou coluna 2%, aplicar 2% padrão para CORTES BOVINOS
+            return 0.02
+    
+    # Se não encontrou oferta válida em OFF_VOG_CB
+    print(f"❌ Nenhuma oferta válida em OFF_VOG_CB para CORTES BOVINOS {codproduto_int}")
+    return None
+    
 # Carregar fechamento
 fechamento = carregar_csv_com_codificacao(r"C:\Users\win11\Downloads\fechamento_processado.csv")
 
@@ -58,14 +422,13 @@ devolucoes = carregar_csv_com_codificacao(r"S:\hor\excel\20251001.csv")
 # Carregar custos_produtos (Excel)
 try:
     custos_produtos = pd.read_excel(r"C:\Users\win11\Downloads\Custos de produtos - Outubro.xlsx", sheet_name='Base', dtype=str)
-    print("✅ Custos produtos carregado")
 except Exception:
     custos_produtos = pd.DataFrame()
 
 # Carregar LOURENCINI
 try:
     lourencini = pd.read_excel(r"C:\Users\win11\Downloads\LOURENCINI.xlsx")
-    required_cols = ['COD', '0,15', '0,3', '0,5', '0,7', '1', 'Data']
+    required_cols = ['COD', '0,15', '0,3', '0,5', '0,7', '1', 'Data', 'Data_fim']
     if all(col in lourencini.columns for col in required_cols):
         lourencini['COD'] = lourencini['COD'].astype(str).str.strip()
         lourencini['COD'] = lourencini['COD'].str.replace(r'\.0$', '', regex=True)
@@ -95,10 +458,8 @@ try:
             lourencini['Data_fim'] = pd.to_datetime(lourencini['Data_fim'], errors='coerce', dayfirst=True)
         
         lourencini = lourencini.sort_values('Data')
-        print("✅ LOURENCINI carregado")
     else:
         lourencini = pd.DataFrame()
-        print("⚠️ Colunas necessárias não encontradas no LOURENCINI")
 except Exception:
     lourencini = pd.DataFrame()
     print("⚠️ Erro ao carregar LOURENCINI")
@@ -106,14 +467,12 @@ except Exception:
 # Carregar OFERTAS_VOG 
 try:
     ofertas_off = pd.read_excel(r"C:\Users\win11\Downloads\OFERTAS_VOG.xlsx", sheet_name='OFF_VOG')
-    print("✅ OFF_VOG carregado")
 except Exception:
     ofertas_off = pd.DataFrame()
     print("⚠️ Erro ao carregar OFF_VOG")
 
 try:
     ofertas_cb = pd.read_excel(r"C:\Users\win11\Downloads\OFERTAS_VOG.xlsx", sheet_name='OFF_VOG_CB')
-    print("✅ OFF_VOG_CB carregado")
 except Exception:
     ofertas_cb = pd.DataFrame()
     print("⚠️ Erro ao carregar OFF_VOG_CB")
@@ -132,30 +491,17 @@ if devolucoes.empty:
 print("✅ TODOS OS ARQUIVOS CARREGADOS")
 print(f"📊 Tamanhos: fechamento={len(fechamento)}, cancelados={len(cancelados)}, devoluções={len(devolucoes)}")
 
-# =============================================================================
-# MODIFICAÇÃO 1: FILTRAR APENAS LINHAS COM HISTORICO 51 OU 68
-# =============================================================================
-print("🔄 Filtrando linhas com HISTORICO 51 ou 68...")
-
 if not devolucoes.empty:
-    # Converter HISTORICO para string e remover espaços
     devolucoes['HISTORICO'] = devolucoes['HISTORICO'].astype(str).str.strip()
-    
-    # Filtrar apenas linhas com HISTORICO 51 ou 68
     devolucoes_filtradas = devolucoes[
         (devolucoes['HISTORICO'] == '51') | 
         (devolucoes['HISTORICO'] == '68')
     ].copy()
-    
-    print(f"📊 Devoluções após filtro HISTORICO: {len(devolucoes_filtradas)} linhas (de {len(devolucoes)} originalmente)")
-    
-    # Atualizar o DataFrame devolucoes com as linhas filtradas
     devolucoes = devolucoes_filtradas
 else:
     print("⚠️ AVISO: DataFrame 'devolucoes' está vazio, não foi possível filtrar por HISTORICO")
 
-# [SEU CÓDIGO EXISTENTE DE PROCESSAMENTO ATÉ A CRIAÇÃO DO base_df PERMANECE IGUAL...]
-# Renomear colunas
+# Renomear colunas e processar custos_produtos
 rename_mapping = {
     'PRODUTO': 'CODPRODUTO', 'DATA': 'DATA', 'PCS': 'QTDE', 'KGS': 'PESO_KGS', 
     'CUSTO': 'CUSTO', 'FRETE': 'FRETE', 'PRODUÇÃO': 'PRODUÇÃO', 'TOTAL': 'TOTAL', 
@@ -163,7 +509,6 @@ rename_mapping = {
 }
 custos_produtos = custos_produtos.rename(columns=rename_mapping)
 
-# Converter colunas numéricas
 colunas_numericas = ['PESO_KGS', 'CUSTO', 'FRETE', 'PRODUÇÃO', 'TOTAL', 'QTD', 'PESO']
 for coluna in colunas_numericas:
     if coluna in custos_produtos.columns:
@@ -178,29 +523,9 @@ for coluna in colunas_numericas:
             pass
 
 custos_produtos['DATA'] = pd.to_datetime(custos_produtos['DATA'], errors='coerce', dayfirst=True)
-
-# Função para converter CODPRODUTO para inteiro
-def converter_codproduto_para_int(df, coluna='CODPRODUTO'):
-    df[coluna] = df[coluna].astype(str).str.strip()
-    df[coluna] = df[coluna].str.replace(r'\.0$', '', regex=True)
-    df[coluna] = df[coluna].str.replace(r'^0+', '', regex=True)
-    df[coluna] = df[coluna].str.strip()
-    
-    def converter_para_int(valor):
-        try:
-            if pd.isna(valor) or valor == '' or valor == 'nan':
-                return np.nan
-            return int(float(valor))
-        except (ValueError, TypeError):
-            return np.nan
-    
-    df[coluna] = df[coluna].apply(converter_para_int)
-    return df
-
 custos_produtos = converter_codproduto_para_int(custos_produtos)
 
 # Processar dados
-print("🔄 Processando dados...")
 notas_canceladas = cancelados['NUMERO'].tolist() if not cancelados.empty else []
 
 if not devolucoes.empty:
@@ -219,21 +544,12 @@ else:
     devolucoes_var = []
     vendas_var = []
 
-# =============================================================================
-# MODIFICAÇÃO 2: EXCLUIR LINHAS CANCELADAS E SEM HISTORICO VÁLIDO
-# =============================================================================
-print("🔄 Aplicando filtros de cancelados e histórico...")
 
-# Primeiro: filtrar notas canceladas
 fechamento_sem_cancelados = fechamento[~fechamento['NF-E'].isin(notas_canceladas)].copy()
-print(f"📊 Após remover cancelados: {len(fechamento_sem_cancelados)} linhas")
 
-# Segundo: criar lista de ROMANEIO e NF-E válidos do arquivo de devoluções (apenas HISTORICO 51 ou 68)
 if not devolucoes.empty:
-    # Pegar todas as combinações únicas de ROMANEIO e NOTA FISCAL do arquivo filtrado
     combinacoes_validas = devolucoes[['ROMANEIO', 'NOTA FISCAL']].drop_duplicates()
     
-    # Criar uma chave única para comparação
     fechamento_sem_cancelados['CHAVE_ROMANEIO_NF'] = (
         fechamento_sem_cancelados['ROMANEIO'].astype(str) + "_" + 
         fechamento_sem_cancelados['NF-E'].astype(str)
@@ -246,22 +562,15 @@ if not devolucoes.empty:
     
     chaves_validas = set(combinacoes_validas['CHAVE_ROMANEIO_NF'].tolist())
     
-    # Filtrar apenas as linhas do fechamento que têm correspondência no arquivo de devoluções filtrado
     fechamento_filtrado = fechamento_sem_cancelados[
         fechamento_sem_cancelados['CHAVE_ROMANEIO_NF'].isin(chaves_validas)
     ].copy()
-    
-    print(f"📊 Após filtrar por HISTORICO 51/68: {len(fechamento_filtrado)} linhas")
-    
-    # Remover a coluna auxiliar
+
     fechamento_filtrado = fechamento_filtrado.drop('CHAVE_ROMANEIO_NF', axis=1)
     fechamento_sem_cancelados = fechamento_filtrado
 else:
     print("⚠️ AVISO: Não foi possível filtrar por histórico - devoluções vazio")
-    # Se não há devoluções, manter todas as linhas não canceladas
     fechamento_sem_cancelados = fechamento_sem_cancelados
-
-print(f"📊 Total final de linhas para processamento: {len(fechamento_sem_cancelados)}")
 
 # Criar dicionário de custos
 custos_dict = {}
@@ -347,7 +656,6 @@ for _, row in fechamento.iterrows():
         fechamento_nf_dict[int(row['NF-E'])] = row['Mov'] if 'Mov' in fechamento.columns and pd.notna(row['Mov']) else ""
 
 # CRIAR DICIONÁRIO PARA QTDE AJUSTADA A PARTIR DO ARQUIVO DE DEVOLUÇÕES
-print("📋 Criando dicionário para QTDE AJUSTADA...")
 qtde_ajustada_dict = {}
 
 if not devolucoes.empty:
@@ -377,15 +685,12 @@ if not devolucoes.empty:
                         
             except Exception:
                 continue
-        
-        print(f"✅ Dicionário QTDE AJUSTADA criado com {len(qtde_ajustada_dict)} entradas")
     else:
         qtde_ajustada_dict = {}
 else:
     qtde_ajustada_dict = {}
 
 # Criar base_df
-print("📊 Criando base principal...")
 base_df = pd.DataFrame()
 
 # Preencher colunas básicas
@@ -570,7 +875,6 @@ def buscar_producao(row):
         return 0
 
 # Aplicar funções
-print("🔄 Calculando QTDE AJUSTADA...")
 base_df['QTDE AJUSTADA'] = base_df.apply(calcular_qtde_ajustada, axis=1)
 base_df['QTDE REAL2'] = base_df.apply(calcular_qtde_real2, axis=1)
 base_df['CUSTO'] = base_df.apply(buscar_custo, axis=1)
@@ -634,18 +938,17 @@ base_df['Aniversário'] = base_df.apply(
     lambda row: 0 if row['CF'] == "DEV" else row['Fat. Bruto'] * 0.01, axis=1
 )
 
-def calcular_comissao_kg_corrigida(row):
-    """Calcula Comissão Kg de forma corrigida - PRIORIDADE MÁXIMA"""
+def calcular_comissao_kg_simplificada(row):
+    """Calcula Comissão Kg de forma simplificada"""
     try:
-        # Para DEV, usar valor padrão (não buscar comissão por kg)
         if row['CF'] == "DEV":
-            return None
+            return 0
         
         vendedor = str(row['VENDEDOR']).strip() if pd.notna(row['VENDEDOR']) else ''
         codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ''
         grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
         
-        # 1. REGRAS ESPECÍFICAS POR VENDEDOR (COMISSÃO POR KG)
+        # REGRAS ESPECÍFICAS POR VENDEDOR (COMISSÃO POR KG)
         regras_vendedores = {
             "LUIZ FERNANDO VOLTERO BARBOSA": {
                 "812": {"REDE CHAMA": 3, "REDE PARANA": 3, "REDE PLUS": 2}
@@ -674,22 +977,22 @@ def calcular_comissao_kg_corrigida(row):
                 else:
                     return regra
         
-        # 2. REGRA LOURENCINI (COMISSÃO POR KG) - CORREÇÃO APLICADA
+        # REGRA LOURENCINI (COMISSÃO POR KG)
         if row['GRUPO'] == "REDE LOURENCINI" and not lourencini.empty:
             data_venda = row['DATA']
             preco_venda = row['Preço Venda']
             
             if not codproduto or codproduto == 'nan' or pd.isna(data_venda) or pd.isna(preco_venda) or preco_venda == 0:
-                return None
+                return 0
             
             try:
                 codproduto_int = int(codproduto)
             except (ValueError, TypeError):
-                return None
+                return 0
             
             lourencini_filtrado = lourencini[lourencini['COD'] == codproduto_int]
             if lourencini_filtrado.empty:
-                return None
+                return 0
             
             data_venda_dt = pd.Timestamp(data_venda)
             lourencini_row = None
@@ -711,7 +1014,6 @@ def calcular_comissao_kg_corrigida(row):
                     lourencini_filtrado = lourencini_filtrado.sort_values('Data', ascending=True)
                     lourencini_row = lourencini_filtrado.iloc[0]
             
-            # CORREÇÃO: Buscar a melhor comissão considerando todas as colunas
             colunas_comissao = ['0,15', '0,3', '0,5', '0,7', '1']
             melhor_comissao = None
             menor_diferenca = float('inf')
@@ -719,355 +1021,67 @@ def calcular_comissao_kg_corrigida(row):
             for coluna in colunas_comissao:
                 valor_na_tabela = lourencini_row[coluna]
                 
-                # CORREÇÃO: Ignorar valores vazios/NaN
                 if pd.notna(valor_na_tabela) and valor_na_tabela != 0:
                     diferenca = abs(preco_venda - valor_na_tabela)
                     
-                    # CORREÇÃO: Encontrar o valor mais próximo do preço de venda
                     if diferenca < menor_diferenca:
                         menor_diferenca = diferenca
                         melhor_comissao = float(coluna.replace(',', '.'))
             
-            # CORREÇÃO: Se encontrou uma comissão válida, retornar
             if melhor_comissao is not None:
                 return melhor_comissao
         
-        return None
+        return 0
         
     except Exception as e:
         print(f"Erro comissão kg: {e}")
-        return None
+        return 0
 
-def aplicar_regras_comissao_fixa_corrigida(row):
-    """Aplica regras fixas de comissão - SEGUNDA PRIORIDADE"""
-    try:
-        # Converter para os tipos corretos
-        grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
-        razao = str(row['RAZAO']).strip() if pd.notna(row['RAZAO']) else ''
-        fantasia = str(row['FANTASIA']).strip() if pd.notna(row['FANTASIA']) else ''
-        grupo_produto = str(row['GRUPO PRODUTO']).strip() if pd.notna(row['GRUPO PRODUTO']) else ''
-        codproduto = int(row['CODPRODUTO']) if pd.notna(row['CODPRODUTO']) else None
-        is_devolucao = str(row['CF']).startswith('DEV')
-        
-        # Função auxiliar para ajustar devolução
-        def ajustar_devolucao(valor, is_dev):
-            return -valor if is_dev else valor
-
-        # --- REGRA ESPECÍFICA PARA PRODUTOS ---
-        if codproduto in [1807, 947, 1914]:
-            return ajustar_devolucao(0.01, is_devolucao)
-        
-        # --- REGRA ESPECÍFICA PARA REDE ROLDAO ---
-        if grupo == 'REDE ROLDAO':
-            grupos_2_percent = [
-                'CONGELADOS', 'CORTES BOVINOS', 'CORTES DE FRANGO', 'EMBUTIDOS', 
-                'EMBUTIDOS AURORA', 'EMBUTIDOS NOBRE', 'EMBUTIDOS PERDIGÃO', 
-                'EMBUTIDOS SADIA', 'EMBUTIDOS SEARA', 'EMPANADOS', 
-                'KITS FEIJOADA', 'MIUDOS BOVINOS', 'SUINOS', 'TEMPERADOS'
-            ]
-            
-            if grupo_produto in grupos_2_percent:
-                return ajustar_devolucao(0.02, is_devolucao)
-            else:
-                return ajustar_devolucao(0.00, is_devolucao)
-
-        # --- REGRA PARA CALVO - apenas para produtos específicos ---
-        if grupo == 'VAREJO CALVO':
-            # Se for MIUDOS BOVINOS, CORTES DE FRANGO ou SUINOS, processa por ofertas (retorna None)
-            if grupo_produto in ['MIUDOS BOVINOS', 'CORTES DE FRANGO', 'SUINOS']:
-                return None
-            # Todo o resto do CALVO é 3%
-            return ajustar_devolucao(0.03, is_devolucao)
-        
-        # --- REGRA PARA CENCOSUD ---
-        if 'REDE CENCOSUD' in grupo:
-            if 'SALAME UAI' in grupo_produto:
-                return ajustar_devolucao(0.01, is_devolucao)
-            return ajustar_devolucao(0.03, is_devolucao)
-        
-        # --- REGRA PARA ROSSI ---
-        if grupo == 'REDE ROSSI':
-            # PRIMEIRO: regra de 0%
-            if codproduto == 1139:
-                return ajustar_devolucao(0.00, is_devolucao)
-            
-            if grupo_produto in ['EMBUTIDOS', 'EMBUTIDOS NOBRE', 'EMBUTIDOS SADIA', 
-                               'EMBUTIDOS PERDIGAO', 'EMBUTIDOS AURORA', 'EMBUTIDOS SEARA', 
-                               'SALAME UAI']:
-                return ajustar_devolucao(0.00, is_devolucao)
-            
-            # SEGUNDO: regra de 2%
-            if grupo_produto in ['MIUDOS BOVINOS', 'SUINOS', 'SALGADOS SUINOS A GRANEL']:
-                return ajustar_devolucao(0.02, is_devolucao)
-            
-            if codproduto == 700:
-                return ajustar_devolucao(0.02, is_devolucao)
-            
-            # TERCEIRO: listas de códigos
-            if codproduto in [1288, 1289, 1287, 937, 1698, 1701, 1587, 1700, 1586, 1699]:
-                return ajustar_devolucao(0.03, is_devolucao)
-            
-            if codproduto in [1265, 1266, 812, 1115, 798, 1211]:
-                return ajustar_devolucao(0.01, is_devolucao)
-        
-        # --- REGRA PARA PLUS ---
-        if grupo == 'REDE PLUS':
-            if grupo_produto in ['TEMPERADOS'] or codproduto == 812:
-                return ajustar_devolucao(0.03, is_devolucao)
-        
-        # --- REGRAS GERAIS ---
-        # Regra 0%
-        grupos_0_percent = [
-            'REDE AKKI', 'VAREJO ANDORINHA', 'VAREJO BERGAMINI', 'REDE DA PRACA', 'REDE DOVALE',
-            'REDE MERCADAO', 'REDE REIMBERG', 'REDE SEMAR', 'REDE TRIMAIS', 'REDE VOVO ZUZU',
-            'REDE BENGALA', 'VAREJO OURINHOS'
-        ]
-        razoes_0_percent = [
-            'COMERCIO DE CARNES E ROTISSERIE DUTRA LT',
-            'COMERCIO DE CARNES E ROTISSERIE DUTRA LTDA',
-            'DISTRIBUIDORA E COMERCIO UAI SP LTDA',
-            "GARFETO'S FORNECIMENTO DE REFEICOES LTDA", 
-            "LATICINIO SOBERANO LTDA VILA ALPINA",
-            "SAO LORENZO ALIMENTOS LTDA",
-            "QUE DELICIA MENDES COMERCIO DE ALIMENTOS",
-            "MARIANA OLIVEIRA MAZZEI",
-            "LS SANTOS COMERCIO DE ALIMENTOS LTDA"
-        ]
-        
-        if grupo in grupos_0_percent or razao in razoes_0_percent or fantasia in razoes_0_percent:
-            return ajustar_devolucao(0.00, is_devolucao)
-        
-        # Regra 3%
-        grupos_3_percent = ['VAREJO CALVO', 'REDE CHAMA', 'REDE ESTRELA AZUL', 'REDE TENDA', 'REDE HIGAS']
-        if grupo in grupos_3_percent:
-            return ajustar_devolucao(0.03, is_devolucao)
-        
-        # Regra 1%
-        if razao == 'SHOPPING FARTURA VALINHOS COMERCIO LTDA' or fantasia == 'SHOPPING FARTURA VALINHOS COMERCIO LTDA':
-            return ajustar_devolucao(0.01, is_devolucao)
-        
-        # --- REGRAS ESPECÍFICAS POR RAZÃO SOCIAL ---
-        if razao == 'PAES E DOCES LEKA LTDA' or fantasia == 'PAES E DOCES LEKA LTDA':
-            if codproduto in [1893, 1886]:
-                return ajustar_devolucao(0.03, is_devolucao)
-        
-        if razao == 'PAES E DOCES MICHELLI LTDA' or fantasia == 'PAES E DOCES MICHELLI LTDA':
-            if codproduto in [1893, 1886]:
-                return ajustar_devolucao(0.03, is_devolucao)
-        
-        if razao == 'WANDERLEY GOMES MORENO' or fantasia == 'WANDERLEY GOMES MORENO':
-            if codproduto in [1893, 1886]:
-                return ajustar_devolucao(0.03, is_devolucao)
-        
-        return None
-        
-    except Exception as e:
-        print(f"Erro regras fixas: {e}")
-        return None
-
-def aplicar_ofertas_comissao_corrigida(row):
-    """Aplica regras de ofertas - TERCEIRA PRIORIDADE"""
-    try:
-        codproduto = str(row['CODPRODUTO']).strip() if pd.notna(row['CODPRODUTO']) else ''
-        data_venda = row['DATA']
-        preco_venda = row['Preço Venda']
-        grupo = str(row['GRUPO']).strip() if pd.notna(row['GRUPO']) else ''
-        grupo_produto = str(row['GRUPO PRODUTO']).strip() if pd.notna(row['GRUPO PRODUTO']) else ''
-        is_devolucao = str(row['CF']).startswith('DEV')
-        
-        if not codproduto or codproduto == 'nan' or pd.isna(data_venda) or pd.isna(preco_venda) or preco_venda == 0:
-            return None
-        
-        # Função auxiliar para ajustar devolução
-        def ajustar_devolucao(valor, is_dev):
-            return -valor if is_dev else valor
-
-        # Converter data
-        if isinstance(data_venda, date):
-            data_venda = pd.Timestamp(data_venda)
-        
-        try:
-            codproduto_int = int(float(codproduto))
-        except (ValueError, TypeError):
-            return None
-        
-        # Função para converter datas das ofertas
-        def converter_data_oferta(data_str):
-            try:
-                if not isinstance(data_str, str):
-                    return data_str
-                    
-                meses_pt_br = {
-                    'jan': '01', 'fev': '02', 'mar': '03', 'abr': '04', 'mai': '05', 'jun': '06',
-                    'jul': '07', 'ago': '08', 'set': '09', 'out': '10', 'nov': '11', 'dez': '12'
-                }
-                
-                partes = data_str.split('/')
-                if len(partes) == 2:
-                    dia = partes[0].strip()
-                    mes_abrev = partes[1].strip().lower()[:3]
-                    
-                    if mes_abrev in meses_pt_br:
-                        mes_num = meses_pt_br[mes_abrev]
-                        ano_atual = date.today().year
-                        data_formatada = f"{dia}/{mes_num}/{ano_atual}"
-                        return pd.to_datetime(data_formatada, dayfirst=True, errors='coerce')
-                
-                return pd.to_datetime(data_str, dayfirst=True, errors='coerce')
-            except Exception:
-                return pd.to_datetime(data_str, dayfirst=True, errors='coerce')
-        
-        # PRIMEIRO: Buscar na aba OFF_VOG_CB (CB tem prioridade sobre VOG)
-        if not ofertas_cb.empty and 'CD_PROD' in ofertas_cb.columns and 'DT_REF_OFF_CB' in ofertas_cb.columns:
-            ofertas_cod = ofertas_cb[ofertas_cb['CD_PROD'] == codproduto_int].copy()
-            
-            if not ofertas_cod.empty:
-                ofertas_cod = ofertas_cod.copy()
-                ofertas_cod['DT_REF_OFF_CB_CONVERTED'] = ofertas_cod['DT_REF_OFF_CB'].apply(converter_data_oferta)
-                
-                ofertas_cod = ofertas_cod.dropna(subset=['DT_REF_OFF_CB_CONVERTED'])
-                ofertas_cod = ofertas_cod.sort_values('DT_REF_OFF_CB_CONVERTED', ascending=False)
-                
-                ofertas_validas = ofertas_cod[ofertas_cod['DT_REF_OFF_CB_CONVERTED'] <= data_venda]
-                
-                if not ofertas_validas.empty:
-                    oferta_mais_recente = ofertas_validas.iloc[0]
-                    
-                    if '2%' in oferta_mais_recente and pd.notna(oferta_mais_recente['2%']):
-                        preco_oferta_2pct = oferta_mais_recente['2%']
-                        
-                        # Aplicar desconto de 5% para grupos especiais
-                        grupos_especiais = ['ROD E RAF', 'STYLLUS']
-                        if grupo == 'VAREJO CALVO' and grupo_produto in ['MIUDOS BOVINOS', 'CORTES DE FRANGO', 'SUINOS']:
-                            grupos_especiais.append('VAREJO CALVO')
-                        
-                        if grupo in grupos_especiais:
-                            preco_comparacao = preco_venda * 0.95  # Preço - 5%
-                        else:
-                            preco_comparacao = preco_venda  # Mantém o preço normal
-                        
-                        # Lógica de classificação para CB: 2% se >=, 1% se <
-                        if preco_comparacao >= preco_oferta_2pct:
-                            return ajustar_devolucao(0.02, is_devolucao)
-                        else:
-                            return ajustar_devolucao(0.01, is_devolucao)
-        
-        # SEGUNDO: Buscar na aba OFF_VOG (VOG)
-        if not ofertas_off.empty and 'COD' in ofertas_off.columns and 'DT_REF_OFF' in ofertas_off.columns:
-            ofertas_cod = ofertas_off[ofertas_off['COD'] == codproduto_int].copy()
-            
-            if not ofertas_cod.empty:
-                ofertas_cod = ofertas_cod.copy()
-                ofertas_cod['DT_REF_OFF_CONVERTED'] = ofertas_cod['DT_REF_OFF'].apply(converter_data_oferta)
-                
-                ofertas_cod = ofertas_cod.dropna(subset=['DT_REF_OFF_CONVERTED'])
-                ofertas_cod = ofertas_cod.sort_values('DT_REF_OFF_CONVERTED', ascending=False)
-                
-                ofertas_validas = ofertas_cod[ofertas_cod['DT_REF_OFF_CONVERTED'] <= data_venda]
-                
-                if not ofertas_validas.empty:
-                    oferta_mais_recente = ofertas_validas.iloc[0]
-                    
-                    if '3%' in oferta_mais_recente and pd.notna(oferta_mais_recente['3%']):
-                        preco_oferta_3pct = oferta_mais_recente['3%']
-                        
-                        # Aplicar desconto de 5% para grupos especiais
-                        grupos_especiais = ['ROD E RAF', 'STYLLUS']
-                        if grupo == 'VAREJO CALVO' and grupo_produto in ['MIUDOS BOVINOS', 'CORTES DE FRANGO', 'SUINOS']:
-                            grupos_especiais.append('VAREJO CALVO')
-                        
-                        if grupo in grupos_especiais:
-                            preco_comparacao = preco_venda * 0.95  # Preço - 5%
-                        else:
-                            preco_comparacao = preco_venda  # Mantém o preço normal
-                        
-                        # Lógica de classificação para VOG: 3% se >=, 1% se <
-                        if preco_comparacao >= preco_oferta_3pct:
-                            return ajustar_devolucao(0.03, is_devolucao)
-                        else:
-                            return ajustar_devolucao(0.01, is_devolucao)
-        
-        return None
-        
-    except Exception as e:
-        print(f"Erro ofertas: {e}")
-        return None
-
-def calcular_p_com_final_corrigido(row):
+def calcular_p_com_final(row):
     """
-    Calcula P.Com final na ORDEM CORRETA DE PRIORIDADE:
-    1º COMISSÃO POR KG (MÁXIMA PRIORIDADE) - Se encontrou comissão por kg, calcular P.Com = ComissãoKg / PreçoVenda
-    2º REGRAS FIXAS DE COMISSÃO (SEGUNDA PRIORIDADE) 
-    3º OFERTAS (TERCEIRA PRIORIDADE) - CB primeiro, depois VOG
-    4º CORTES BOVINOS (2%)
-    5º PADRÃO (3%)
+    Calcula P.Com na seguinte ordem:
+    1. Se tem Comissão Kg: P.Com = Comissão Kg / Preço Venda
+    2. Se não, aplica regras de comissão
+    3. Se nenhuma regra se aplica: busca ofertas
+    4. Se nada encontrado: 3% padrão (ou -3% para DEV)
     """
     try:
         is_devolucao = str(row['CF']).startswith('DEV')
         
-        # PRIMEIRO: COMISSÃO POR KG (MÁXIMA PRIORIDADE)
-        comissao_kg = calcular_comissao_kg_corrigida(row)
+        # 1. PRIMEIRO: COMISSÃO POR KG
+        comissao_kg = calcular_comissao_kg_simplificada(row)
         
-        if comissao_kg is not None and row['Preço Venda'] > 0:
-            # SE ENCONTROU COMISSÃO POR KG: P.Com = ComissãoKg / PreçoVenda
+        if comissao_kg is not None and comissao_kg > 0 and row['Preço Venda'] > 0:
             p_com_calculado = comissao_kg / row['Preço Venda']
             return -p_com_calculado if is_devolucao else p_com_calculado
         
-        # SEGUNDO: REGRAS FIXAS DE COMISSÃO (SEGUNDA PRIORIDADE)
-        comissao_fixa = aplicar_regras_comissao_fixa_corrigida(row)
-        if comissao_fixa is not None:
-            return comissao_fixa
+        # 2. SEGUNDO: REGRAS DE COMISSÃO
+        comissao_regra = aplicar_regras_comissao(row)
         
-        # TERCEIRO: OFERTAS (TERCEIRA PRIORIDADE)
-        comissao_ofertas = aplicar_ofertas_comissao_corrigida(row)
-        if comissao_ofertas is not None:
-            return comissao_ofertas
+        if comissao_regra is not None:
+            return -comissao_regra if is_devolucao else comissao_regra
         
-        # QUARTO: VERIFICAR SE É CORTES BOVINOS
-        grupo_produto = str(row['GRUPO PRODUTO']).strip() if pd.notna(row['GRUPO PRODUTO']) else ''
-        if grupo_produto == "CORTES BOVINOS":
-            resultado = -0.02 if is_devolucao else 0.02
-            return resultado
+        # 3. TERCEIRO: OFERTAS (VOG e CB)
+        comissao_oferta = buscar_oferta_vog(row, ofertas_off, ofertas_cb)
         
-        # QUINTO: VALOR PADRÃO (3%)
-        resultado = -0.03 if is_devolucao else 0.03
-        return resultado
+        if comissao_oferta is not None:
+            return -comissao_oferta if is_devolucao else comissao_oferta
+        
+        # 4. QUARTO: VALOR PADRÃO (3%)
+        return -0.03 if is_devolucao else 0.03
         
     except Exception as e:
-        print(f"❌ ERRO no cálculo P.Com: {e}, usando fallback 0.03")
+        print(f"❌ ERRO no cálculo P.Com final: {e}, usando fallback 0.03")
         return -0.03 if is_devolucao else 0.03
 
-# APLICAR O CÁLCULO CORRIGIDO DO P.COM
-print("🔄 Aplicando cálculo corrigido do P.Com...")
-base_df['P. Com'] = base_df.apply(calcular_p_com_final_corrigido, axis=1)
-
-# AGORA CALCULAR COMISSÃO KG APENAS PARA LINHAS QUE TEM COMISSÃO POR KG
-print("🔄 Preenchendo Comissão Kg apenas para linhas com comissão por kg...")
-
-def preencher_comissao_kg_corrigida(row):
-    """Preenche Comissão Kg apenas com os valores originais da função de comissão por kg"""
-    try:
-        # Buscar o valor original da comissão por kg
-        comissao_kg_original = calcular_comissao_kg_corrigida(row)
-        
-        if comissao_kg_original is not None:
-            # Se encontrou comissão por kg, usar o valor original
-            return comissao_kg_original
-        else:
-            # Para outras linhas, deixar vazio ou 0
-            return 0
-            
-    except Exception as e:
-        print(f"Erro ao preencher Comissão Kg: {e}")
-        return 0
-
-# Aplicar a função para preencher Comissão Kg
-base_df['Comissão Kg'] = base_df.apply(preencher_comissao_kg_corrigida, axis=1)
+# APLICAR O CÁLCULO FINAL DO P.COM
+base_df['Comissão Kg'] = base_df.apply(calcular_comissao_kg_simplificada, axis=1)
+base_df['P. Com'] = base_df.apply(calcular_p_com_final, axis=1)
 
 # Verificar se algum P.Com ficou vazio
 p_com_vazios = base_df['P. Com'].isna().sum()
 if p_com_vazios > 0:
-    print(f"⚠️  Ainda existem {p_com_vazios} registros com P.Com vazio - aplicando fallback...")
+    print(f"⚠️  Existem {p_com_vazios} registros com P.Com vazio - aplicando fallback...")
     base_df['P. Com'] = base_df.apply(
         lambda row: -0.03 if str(row['CF']).startswith('DEV') else 0.03 
         if pd.isna(row['P. Com']) else row['P. Com'], 
@@ -1210,9 +1224,6 @@ base_df['Custo divergente'] = base_df.apply(
     lambda row: "CORRETO" if (row['QTDE'] > 0 and row['CUSTO EM SISTEMA'] == row['CUSTO']) else "DIVERGENTE", axis=1
 )
 
-
-print("🔄 Aplicando regras para CF = 'DEV'...")
-
 def aplicar_regras_dev(row):
     if str(row['CF']).strip() == "DEV":
         colunas_zero = [
@@ -1294,12 +1305,7 @@ print("💾 Salvando arquivos...")
 output_path = f"C:\\Users\\win11\\Downloads\\Margem_{data_nome_arquivo}.xlsx"
 
 with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-    base_df.to_excel(writer, sheet_name='base (3,5%)', index=False)
-    # Salvar as duas abas separadamente
-    if not ofertas_off.empty:
-        ofertas_off.to_excel(writer, sheet_name='OFF_VOG', index=False)
-    if not ofertas_cb.empty:
-        ofertas_cb.to_excel(writer, sheet_name='OFF_VOG_CB', index=False)
+    base_df.to_excel(writer, sheet_name='Base (3,5%)', index=False)
     custos_produtos.to_excel(writer, sheet_name='PRECOS', index=False)
     cancelados.to_excel(writer, sheet_name='Base_cancelamento', index=False)
     devolucoes.to_excel(writer, sheet_name='Base_movimentacao', index=False)
@@ -1335,7 +1341,7 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
     for sheet_name in writer.sheets:
         worksheet = writer.sheets[sheet_name]
         
-        if sheet_name == 'base (3,5%)':
+        if sheet_name == 'Base (3,5%)':
             col_indices_monetarias = {}
             col_indices_porcentagem = {}
             col_indices_centralizar = {}
@@ -1349,7 +1355,7 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                 if col_name in colunas_para_centralizar:
                     col_indices_centralizar[col_num] = col_name
         
-        if sheet_name == 'base (3,5%)':
+        if sheet_name == 'Base (3,5%)':
             for col_num in col_indices_centralizar:
                 col_letter = openpyxl.utils.get_column_letter(col_num)
                 
@@ -1357,7 +1363,7 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                     cell = worksheet[f'{col_letter}{row_num}']
                     cell.alignment = Alignment(horizontal='center', vertical='center')
         
-        if sheet_name == 'base (3,5%)':
+        if sheet_name == 'Base (3,5%)':
             for col_num in col_indices_monetarias:
                 col_letter = openpyxl.utils.get_column_letter(col_num)
                 
@@ -1373,7 +1379,7 @@ with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                         except (ValueError, TypeError):
                             pass
         
-        if sheet_name == 'base (3,5%)':
+        if sheet_name == 'Base (3,5%)':
             for col_num in col_indices_porcentagem:
                 col_letter = openpyxl.utils.get_column_letter(col_num)
                 
@@ -1445,4 +1451,3 @@ print("✅ PROCESSAMENTO CONCLUÍDO!")
 print(f"📄 Arquivo Excel: {output_path}")
 print(f"📄 Arquivo JSON: {json_path}")
 print(f"📊 Total de registros processados: {len(base_df)}")
-print(f"✅ P.Com preenchido em {len(base_df) - base_df['P. Com'].isna().sum()} de {len(base_df)} registros")
