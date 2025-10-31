@@ -890,21 +890,78 @@ else:
 
 base_df['Escritório'] = base_df['Escritório'].apply(lambda x: 0.035 if abs(x - 0.04) < 0.001 else x)
 
-# Desconto
+# Desconto - CORREÇÃO COMPLETA
 base_df['Desc Perc'] = 0
-if 'DESCONTO' in fechamento_sem_cancelados.columns:
-    for i, row in fechamento_sem_cancelados.iterrows():
-        if i < len(base_df):
-            desconto_val = row['DESCONTO']
-            if pd.notna(desconto_val) and str(desconto_val).strip() != '':
-                try:
-                    base_df.at[i, 'Desc Perc'] = float(str(desconto_val).replace(',', '.').strip()) / 100
-                except:
-                    base_df.at[i, 'Desc Perc'] = 0
 
+if 'DESCONTO' in fechamento_sem_cancelados.columns:
+    # PRIMEIRO: Preencher valores vazios/NaN com 0 na coluna DESCONTO
+    fechamento_sem_cancelados['DESCONTO'] = fechamento_sem_cancelados['DESCONTO'].fillna(0)
+    
+    # Converter para string e tratar valores vazios
+    fechamento_sem_cancelados['DESCONTO'] = fechamento_sem_cancelados['DESCONTO'].apply(
+        lambda x: '0' if pd.isna(x) or str(x).strip() == '' else str(x)
+    )
+    
+    # Criar chave única para merge
+    fechamento_sem_cancelados['MERGE_KEY'] = (
+        fechamento_sem_cancelados['ROMANEIO'].astype(str) + "_" + 
+        fechamento_sem_cancelados['NF-E'].astype(str) + "_" + 
+        fechamento_sem_cancelados['CODPRODUTO'].astype(str)
+    )
+    
+    base_df['MERGE_KEY'] = (
+        base_df['OS'].astype(str) + "_" + 
+        base_df['NF-E'].astype(str) + "_" + 
+        base_df['CODPRODUTO'].astype(str)
+    )
+    
+    # Criar dicionário de descontos
+    desconto_dict = {}
+    for _, row in fechamento_sem_cancelados.iterrows():
+        key = row['MERGE_KEY']
+        desconto_val = row['DESCONTO']
+        
+        try:
+            # Já garantimos que não tem valores vazios, mas vamos limpar
+            desconto_str = str(desconto_val).strip().replace(',', '.')
+            # Remover possíveis caracteres não numéricos (exceto ponto e sinal negativo)
+            desconto_str = ''.join(c for c in desconto_str if c.isdigit() or c in '.-')
+            
+            if not desconto_str or desconto_str == '.':
+                desconto_float = 0
+            else:
+                desconto_float = float(desconto_str)
+                # Se o valor for maior que 1, provavelmente está em porcentagem (5 → 5%)
+                if desconto_float > 1:
+                    desconto_float = desconto_float / 100
+            
+            desconto_dict[key] = desconto_float
+            
+        except (ValueError, TypeError) as e:
+            print(f"⚠️ Erro ao converter desconto '{desconto_val}': {e}")
+            desconto_dict[key] = 0
+    
+    # Aplicar descontos
+    base_df['Desc Perc'] = base_df['MERGE_KEY'].map(desconto_dict).fillna(0)
+    
+    # Remover coluna temporária
+    base_df = base_df.drop('MERGE_KEY', axis=1)
+
+# VERIFICAÇÃO - mostrar alguns exemplos de descontos
+print("🔍 AMOSTRA DE DESCONTOS APLICADOS:")
+amostra_descontos = base_df[['OS', 'NF-E', 'CODPRODUTO', 'Desc Perc']].head(15)
+print(amostra_descontos)
+
+# Verificar específico para a nota problemática
+nota_problema = base_df[base_df['NF-E'] == 112435]
+if not nota_problema.empty:
+    print(f"\n🔍 NOTA 112435 - Desc Perc: {nota_problema['Desc Perc'].values[0]} (deveria ser 0.05)")
+
+# Garantir que Desc. Valor seja calculado corretamente
 base_df['Desc. Valor'] = base_df.apply(
     lambda row: 0 if (row['CF'] == "DEV" or row['GRUPO'] == "TENDA") 
-    else row['QTDE AJUSTADA'] * row['Preço Venda'] * row['Desc Perc'], axis=1
+    else row['QTDE AJUSTADA'] * row['Preço Venda'] * row['Desc Perc'], 
+    axis=1
 )
 
 # Fat. Bruto
@@ -1252,7 +1309,7 @@ base_df = base_df.apply(aplicar_regras_dev, axis=1)
 # Recalcular Lucro / Prej. e Margem após aplicar as regras
 base_df['Lucro / Prej.'] = base_df.apply(
     lambda row: row['Fat. Bruto'] - (
-        (row['QTDE AJUSTADA'] * row['Custo real']) + 
+        row['QTDE AJUSTADA'] * row['Custo real'] + 
         (row['Val Pis'] + row['VLRCOFINS'] + row['IRPJ'] +  row['CSLL'] + row['VL ICMS']) + 
         row['Desc. Valor'] + 
         (row['QTDE AJUSTADA'] * row['Frete']) + 
