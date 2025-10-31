@@ -48,7 +48,8 @@ REGRA_COMISSAO = {
         },
         'REDE ROSSI': {
             0.03: {
-                'codigos': [1288, 1289, 1287, 937, 1698, 1701, 1587, 1700, 1586, 1699]
+                'codigos': [1288, 1289, 1287, 937, 1698, 1701, 1587, 1700, 1586, 1699, 943, 1735, 1624, 1134],
+                'grupos_produto': ['TORRESMO']
             },
             0.01: {
                 'codigos': [1265, 1266, 812, 1115, 798, 1211]
@@ -77,7 +78,7 @@ REGRA_COMISSAO = {
                 'grupos_produto': ['SALAME UAI']
             },
             0.03: {
-                'todos_exceto': ['SALGADOS SUINOS EMBALADOS']
+                'todos_exceto': ['SALAME UAI']  # TODOS OS OUTROS PRODUTOS RECEBEM 0.03
             }
         },
         'REDE ROLDAO': {
@@ -208,7 +209,6 @@ def aplicar_regras_comissao(row):
     except Exception as e:
         print(f"Erro ao aplicar regras comissão: {e}")
         return None
-    
     
 def converter_data_oferta(data_str, data_referencia):
     """
@@ -951,11 +951,6 @@ if 'DESCONTO' in fechamento_sem_cancelados.columns:
 print("🔍 AMOSTRA DE DESCONTOS APLICADOS:")
 amostra_descontos = base_df[['OS', 'NF-E', 'CODPRODUTO', 'Desc Perc']].head(15)
 print(amostra_descontos)
-
-# Verificar específico para a nota problemática
-nota_problema = base_df[base_df['NF-E'] == 112435]
-if not nota_problema.empty:
-    print(f"\n🔍 NOTA 112435 - Desc Perc: {nota_problema['Desc Perc'].values[0]} (deveria ser 0.05)")
 
 # Garantir que Desc. Valor seja calculado corretamente
 base_df['Desc. Valor'] = base_df.apply(
