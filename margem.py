@@ -168,6 +168,9 @@ def aplicar_regras_comissao(row):
         fantasia = str(row['FANTASIA']).strip() if pd.notna(row['FANTASIA']) else ''
         grupo_produto = str(row['GRUPO PRODUTO']).strip() if pd.notna(row['GRUPO PRODUTO']) else ''
         codproduto = int(row['CODPRODUTO']) if pd.notna(row['CODPRODUTO']) else None
+
+        if codproduto in [947, 1807, 1914]:
+            return 0.01
         
         # 1. REGRAS GERAIS
         for comissao, criterios in REGRA_COMISSAO['geral'].items():
