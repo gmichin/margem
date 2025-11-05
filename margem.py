@@ -417,11 +417,11 @@ fechamento = carregar_csv_com_codificacao(r"C:\Users\win11\Downloads\fechamento_
 cancelados = carregar_csv_com_codificacao(r"S:\hor\arquivos\gustavo\can.csv", skiprows=2)
 
 # Carregar devoluções (arquivo onde vamos buscar o PESO para QTDE AJUSTADA)
-devolucoes = carregar_csv_com_codificacao(r"S:\hor\excel\20251001.csv")
+devolucoes = carregar_csv_com_codificacao(r"S:\hor\excel\20251101.csv")
 
 # Carregar custos_produtos (Excel)
 try:
-    custos_produtos = pd.read_excel(r"C:\Users\win11\Downloads\Custos de produtos - Outubro.xlsx", sheet_name='Base', dtype=str)
+    custos_produtos = pd.read_excel(r"C:\Users\win11\Downloads\Custos de produtos - Novembro.xlsx", sheet_name='Base', dtype=str)
 except Exception:
     custos_produtos = pd.DataFrame()
 
@@ -888,7 +888,10 @@ if 'ESCRITORIO' in fechamento_sem_cancelados.columns:
 else:
     base_df['Escritório'] = 0
 
-base_df['Escritório'] = base_df['Escritório'].apply(lambda x: 0.035 if abs(x - 0.04) < 0.001 else x)
+# MODIFICAÇÃO: Transformar 4% e 0% em 3.5%
+base_df['Escritório'] = base_df['Escritório'].apply(
+    lambda x: 0.035 if abs(x - 0.04) < 0.001 or abs(x - 0.00) < 0.001 else x
+)
 
 # Desconto - CORREÇÃO COMPLETA
 base_df['Desc Perc'] = 0
@@ -1208,7 +1211,8 @@ def buscar_esc_fec(row):
         if pd.isna(esc_fec_value):
             return np.nan
         esc_fec_value = float(esc_fec_value)
-        if abs(esc_fec_value - 4.0) < 0.001:
+        # MODIFICAÇÃO: Transformar 4% e 0% em 3.5%
+        if abs(esc_fec_value - 4.0) < 0.001 or abs(esc_fec_value - 0.0) < 0.001:
             esc_fec_value = 3.5
         return esc_fec_value / 100
     except:
