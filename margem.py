@@ -172,6 +172,13 @@ def aplicar_regras_comissao(row):
         if codproduto in [947, 1807, 1914]:
             return 0.01
         
+        # 🔥 NOVA REGRA: REDE RICOY
+        if grupo == 'REDE RICOY':
+            if grupo_produto == 'SALAME UAI':
+                return 0.01  # 1% para SALAME UAI
+            else:
+                return 0.00  # 0% para todos os outros produtos
+        
         # 1. REGRAS GERAIS
         for comissao, criterios in REGRA_COMISSAO['geral'].items():
             # Verificar grupos
