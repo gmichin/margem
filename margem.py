@@ -343,13 +343,11 @@ def buscar_oferta_off(row, ofertas_off, codproduto_int, data_venda, preco_venda,
     if not ofertas_validas.empty:
         oferta_mais_recente = ofertas_validas.iloc[0]
         
-        # Buscar coluna 3%
-        coluna_3pct = None
-        for col in oferta_mais_recente.index:
-            if '3%' in str(col) or '3.00%' in str(col):
-                coluna_3pct = col
-                break
+        # VERIFICAR COLUNAS 3% E 1% - BUSCAR EXATAMENTE ESSES NOMES
+        coluna_3pct = '3%' if '3%' in oferta_mais_recente.index else None
+        coluna_1pct = '1%' if '1%' in oferta_mais_recente.index else None
         
+        # Primeiro tenta usar a coluna 3%
         if coluna_3pct and pd.notna(oferta_mais_recente[coluna_3pct]) and oferta_mais_recente[coluna_3pct] != 0:
             preco_oferta_3pct = oferta_mais_recente[coluna_3pct]
             
@@ -358,6 +356,13 @@ def buscar_oferta_off(row, ofertas_off, codproduto_int, data_venda, preco_venda,
                 return 0.03
             else:
                 return 0.01
+        
+        # Se não tem 3%, tenta usar a coluna 1%
+        elif coluna_1pct and pd.notna(oferta_mais_recente[coluna_1pct]) and oferta_mais_recente[coluna_1pct] != 0:
+            preco_oferta_1pct = oferta_mais_recente[coluna_1pct]
+            
+            # Se tem preço na 1%, aplica 1%
+            return 0.01
     
     # Se não encontrou oferta válida em OFF_VOG
     print(f"❌ Nenhuma oferta válida em OFF_VOG para produto {codproduto_int}")
@@ -365,7 +370,7 @@ def buscar_oferta_off(row, ofertas_off, codproduto_int, data_venda, preco_venda,
 
 def buscar_oferta_cb(row, ofertas_cb, codproduto_int, data_venda, preco_venda):
     """Busca ofertas na aba OFF_VOG_CB para produtos CORTES BOVINOS"""
-    if ofertas_cb.empty or 'CD_PROD' not in ofertas_cb.columns or 'DT_REF' not in ofertas_cb.columns:
+    if ofertas_cb.empty or 'CD_PROD' not in ofertas_cb.columns or 'DT_REF_OFF_CB' not in ofertas_cb.columns:
         print(f"❌ OFF_VOG_CB não disponível para CORTES BOVINOS {codproduto_int}")
         return None  # Retorna None para aplicar 2% padrão
     
@@ -376,7 +381,7 @@ def buscar_oferta_cb(row, ofertas_cb, codproduto_int, data_venda, preco_venda):
         return None  # Retorna None para aplicar 2% padrão
     
     ofertas_cod = ofertas_cod.copy()
-    ofertas_cod['DT_REF_CONVERTED'] = ofertas_cod['DT_REF'].apply(
+    ofertas_cod['DT_REF_CONVERTED'] = ofertas_cod['DT_REF_OFF_CB'].apply(
         lambda x: converter_data_oferta(x, data_venda)
     )
     
@@ -394,9 +399,11 @@ def buscar_oferta_cb(row, ofertas_cb, codproduto_int, data_venda, preco_venda):
     if not ofertas_validas.empty:
         oferta_mais_recente = ofertas_validas.iloc[0]
         
-        # Buscar coluna 2% - em OFF_VOG_CB usamos a coluna "2%"
+        # VERIFICAR COLUNAS 2% E 1% - BUSCAR EXATAMENTE ESSES NOMES
         coluna_2pct = '2%' if '2%' in oferta_mais_recente.index else None
+        coluna_1pct = '1%' if '1%' in oferta_mais_recente.index else None
         
+        # Primeiro tenta usar a coluna 2%
         if coluna_2pct and pd.notna(oferta_mais_recente[coluna_2pct]) and oferta_mais_recente[coluna_2pct] != 0:
             preco_oferta_2pct = oferta_mais_recente[coluna_2pct]
             
@@ -405,8 +412,15 @@ def buscar_oferta_cb(row, ofertas_cb, codproduto_int, data_venda, preco_venda):
                 return 0.02
             else:
                 return 0.01
+        
+        # Se não tem 2%, tenta usar a coluna 1%
+        elif coluna_1pct and pd.notna(oferta_mais_recente[coluna_1pct]) and oferta_mais_recente[coluna_1pct] != 0:
+            preco_oferta_1pct = oferta_mais_recente[coluna_1pct]
+            
+            # Se tem preço na 1%, aplica 1%
+            return 0.01
         else:
-            # Se não encontrou coluna 2%, aplicar 2% padrão para CORTES BOVINOS
+            # Se não encontrou coluna 2% ou 1%, aplicar 2% padrão para CORTES BOVINOS
             return 0.02
     
     # Se não encontrou oferta válida em OFF_VOG_CB
